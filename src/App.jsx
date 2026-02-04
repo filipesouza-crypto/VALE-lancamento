@@ -19,6 +19,12 @@ import {
   limit
 } from "firebase/firestore";
 import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from "firebase/storage";
+import { 
   Plus, Trash2, FileText, ChevronDown, ChevronUp, Save, 
   Paperclip, X, CheckCircle2, AlertCircle, Banknote, Receipt, 
   FolderOpen, DollarSign, Eye, Edit, Search, 
@@ -40,7 +46,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const appId = "lma-finance"; 
+
+// --- CONFIGURAÇÕES DE ARQUIVO ---
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.xlsx']; 
 
 const MASTER_USER = 'filipe.souza@shipstore.com.br';
 
@@ -56,6 +68,38 @@ const logAction = async (userEmail, action, details) => {
   } catch (e) {
     console.error("Erro ao gravar log", e);
   }
+};
+
+// --- FUNÇÕES AUXILIARES DE VALIDAÇÃO ---
+const validateFile = (file) => {
+  if (!file) return { valid: false, error: 'Nenhum arquivo selecionado' };
+  
+  // Validar tamanho
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMB = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+    return { 
+      valid: false, 
+      error: `Arquivo muito grande! Máximo: ${sizeMB}MB. Tamanho: ${(file.size / (1024 * 1024)).toFixed(2)}MB` 
+    };
+  }
+  
+  // Validar tipo
+  if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+    return { 
+      valid: false, 
+      error: `Tipo de arquivo não permitido. Aceitos: PDF, PNG, JPG, XLSX` 
+    };
+  }
+  
+  return { valid: true, error: null };
+};
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
 export default function App() {
@@ -218,23 +262,107 @@ const Dashboard = ({ user, onNoAccess }) => {
   const updateFdaNumber = async (id, val) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { number: val.toUpperCase() });
   
   const saveItem = async (fdaId, itemData, filesNF, filesBoleto) => {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'items'), {
+      try {
+        // Processa arquivos de Nota Fiscal
+        const nfUrls = [];
+        for (const file of filesNF) {
+          if (file.file) { // Se for um novo arquivo (File object)
+            const fileName = `${fdaId}/${Date.now()}_${file.file.name}`;
+            const storageRef = ref(storage, `anexosNF/${fileName}`);
+            await uploadBytes(storageRef, file.file);
+            const downloadUrl = await getDownloadURL(storageRef);
+            nfUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
+          } else {
+            // Se for um arquivo já existente, mantém como está
+            nfUrls.push(file);
+          }
+        }
+
+        // Processa arquivos de Boleto
+        const boletoUrls = [];
+        for (const file of filesBoleto) {
+          if (file.file) { // Se for um novo arquivo (File object)
+            const fileName = `${fdaId}/${Date.now()}_${file.file.name}`;
+            const storageRef = ref(storage, `anexosBoleto/${fileName}`);
+            await uploadBytes(storageRef, file.file);
+            const downloadUrl = await getDownloadURL(storageRef);
+            boletoUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
+          } else {
+            // Se for um arquivo já existente, mantém como está
+            boletoUrls.push(file);
+          }
+        }
+
+        // Salva o item com as URLs dos arquivos e histórico
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'items'), {
           fdaId,
           data: itemData,
-          anexosNF: filesNF,
-          anexosBoleto: filesBoleto,
-          createdAt: new Date().toISOString()
-      });
-      logAction(userEmail, 'GRAVAR ITEM', `Item gravado para FDA ID ${fdaId} - Serviço: ${itemData.servicos}`);
+          anexosNF: nfUrls,
+          anexosBoleto: boletoUrls,
+          // Versionamento - mantém histórico de anexos anteriores
+          historico_anexos: {
+            nf: nfUrls.map(f => ({ ...f, uploadedAt: new Date().toISOString() })),
+            boleto: boletoUrls.map(f => ({ ...f, uploadedAt: new Date().toISOString() }))
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        logAction(userEmail, 'GRAVAR ITEM', `Item gravado para FDA ID ${fdaId} - Serviço: ${itemData.servicos}`);
+      } catch (error) {
+        console.error('Erro ao salvar item:', error);
+        throw error;
+      }
   };
 
   const updateItem = async (id, data, filesNF = null, filesBoleto = null) => {
-      const updatePayload = { data };
-      if (filesNF) updatePayload.anexosNF = filesNF;
-      if (filesBoleto) updatePayload.anexosBoleto = filesBoleto;
-      
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', id), updatePayload);
-      logAction(userEmail, 'ATUALIZAR ITEM', `Item atualizado: ${data.servicos} - Status: ${data.status}`);
+      try {
+        const updatePayload = { data };
+        
+        // Processa novos arquivos de Nota Fiscal se fornecidos
+        if (filesNF && filesNF.length > 0) {
+          const nfUrls = [];
+          for (const file of filesNF) {
+            if (file.file) { // Se for um novo arquivo (File object)
+              const fileName = `${id}/${Date.now()}_${file.file.name}`;
+              const storageRef = ref(storage, `anexosNF/${fileName}`);
+              await uploadBytes(storageRef, file.file);
+              const downloadUrl = await getDownloadURL(storageRef);
+              nfUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
+            } else if (file.url) {
+              // Se já está no Storage, mantém
+              nfUrls.push(file);
+            }
+          }
+          updatePayload.anexosNF = nfUrls;
+        }
+
+        // Processa novos arquivos de Boleto se fornecidos
+        if (filesBoleto && filesBoleto.length > 0) {
+          const boletoUrls = [];
+          for (const file of filesBoleto) {
+            if (file.file) { // Se for um novo arquivo (File object)
+              const fileName = `${id}/${Date.now()}_${file.file.name}`;
+              const storageRef = ref(storage, `anexosBoleto/${fileName}`);
+              await uploadBytes(storageRef, file.file);
+              const downloadUrl = await getDownloadURL(storageRef);
+              boletoUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
+            } else if (file.url) {
+              // Se já está no Storage, mantém
+              boletoUrls.push(file);
+            }
+          }
+          updatePayload.anexosBoleto = boletoUrls;
+        }
+        
+        // Adiciona timestamp de atualização e mantém histórico
+        updatePayload.updatedAt = new Date().toISOString();
+        
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', id), updatePayload);
+        logAction(userEmail, 'ATUALIZAR ITEM', `Item atualizado: ${data.servicos} - Status: ${data.status}`);
+      } catch (error) {
+        console.error('Erro ao atualizar item:', error);
+        throw error;
+      }
   };
 
   const deleteItem = async (id) => { 
@@ -249,14 +377,20 @@ const Dashboard = ({ user, onNoAccess }) => {
     setCurrentModule('entry');
   };
 
-  // Função para abrir o arquivo no navegador (Simulação de URL com Blob)
+  // Função para abrir o arquivo do Firebase Storage
   const handleViewFile = (file) => {
-    const text = `VISUALIZAÇÃO DE ARQUIVO\n\nNome: ${file.name}\nData de Upload: ${file.date}\n\nEste é um visualizador simulado. Em produção, este arquivo seria carregado do Firebase Storage.`;
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    // Abre em uma nova aba para visualização
-    window.open(url, '_blank');
-    logAction(userEmail, 'VISUALIZAR ANEXO', `Arquivo visualizado: ${file.name}`);
+    if (file.url) {
+      // Se o arquivo tem URL (está no Storage), abre diretamente
+      window.open(file.url, '_blank');
+      logAction(userEmail, 'VISUALIZAR ANEXO', `Arquivo visualizado: ${file.name}`);
+    } else if (file.file) {
+      // Se for um arquivo local novo (File object), cria um blob temporário para visualização
+      const blobUrl = URL.createObjectURL(file.file);
+      window.open(blobUrl, '_blank');
+      logAction(userEmail, 'VISUALIZAR ANEXO', `Arquivo visualizado: ${file.name}`);
+    } else {
+      alert('Arquivo não disponível para visualização.');
+    }
   };
 
   if (loadingPermissions) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-slate-400">AUTENTICANDO...</div>;
@@ -275,7 +409,7 @@ const Dashboard = ({ user, onNoAccess }) => {
         <div className="p-6 bg-slate-50 mt-auto border-t"><button onClick={() => signOut(auth)} className="w-full flex items-center justify-center gap-2 text-xs font-black uppercase text-slate-500 hover:text-red-600"><LogOut size={14} /> Sair do Sistema</button></div>
       </aside>
       <main className="flex-1 ml-64 p-10 overflow-y-auto print:m-0">
-        {currentModule === 'entry' && <EntryModule fdas={fdasWithItems} allHistory={rawItems} addFda={addFda} toggleFda={toggleFda} updateFdaNumber={updateFdaNumber} saveItem={saveItem} updateItem={updateItem} deleteItem={deleteItem} editTarget={itemToEdit} clearEditTarget={() => setItemToEdit(null)} />}
+        {currentModule === 'entry' && <EntryModule userEmail={userEmail} fdas={fdasWithItems} allHistory={rawItems} addFda={addFda} toggleFda={toggleFda} updateFdaNumber={updateFdaNumber} saveItem={saveItem} updateItem={updateItem} deleteItem={deleteItem} editTarget={itemToEdit} clearEditTarget={() => setItemToEdit(null)} />}
         {currentModule === 'launched' && <LaunchedModule allItems={allItems} userPermissions={userPermissions} onEdit={triggerEdit} onDelete={deleteItem} onPreview={(files) => setModalPreview({ title: 'Visualização', files })} />}
         {currentModule === 'finance' && <FinanceModule allItems={allItems} isMaster={isMaster} userPermissions={userPermissions} updateItem={updateItem} onPreview={(files, title) => setModalPreview({ title, files })} onDelete={deleteItem} />}
         {currentModule === 'users' && isMaster && <UserManagementModule usersList={usersList} />}
@@ -285,22 +419,42 @@ const Dashboard = ({ user, onNoAccess }) => {
       {/* Modal de Anexos */}
       {modalPreview && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b flex justify-between items-center"><h3 className="font-black text-slate-800 uppercase text-xs tracking-widest flex gap-2"><Paperclip size={18} className="text-blue-600"/> {modalPreview.title}</h3><button onClick={() => setModalPreview(null)} className="p-2 hover:bg-slate-100 rounded-lg"><X size={20}/></button></div>
-            <div className="p-8 max-h-[60vh] overflow-y-auto bg-slate-50/50">
+            <div className="p-8 max-h-[70vh] overflow-y-auto bg-slate-50/50">
               {modalPreview.files?.length > 0 ? ( 
                 <ul className="space-y-4"> 
-                  {modalPreview.files.map(file => ( 
-                    <li key={file.id} className="flex items-center gap-4 p-4 bg-white border rounded-xl shadow-sm">
-                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><FileText size={24}/></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-700 truncate">{file.name}</p>
-                        <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{file.date}</p>
+                  {modalPreview.files.map((file, idx) => (
+                    <li key={idx} className="flex flex-col gap-3 p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-blue-300 hover:shadow-md transition-all">
+                      <div className="flex items-center gap-4">
+                        {/* Thumbnail para imagens */}
+                        {file.url && file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                          <img src={file.url} alt={file.name} className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg flex-shrink-0"><FileText size={20}/></div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-700 truncate">{file.name}</p>
+                          <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{file.date || new Date().toLocaleString()}</p>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          {/* Botão Download */}
+                          <button 
+                            onClick={() => handleDownloadFile(file)}
+                            className="px-3 py-2 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-all flex items-center gap-1"
+                            title="Download"
+                          >
+                            <Download size={12}/> Download
+                          </button>
+                          {/* Botão Visualizar */}
+                          <button 
+                            onClick={() => handleViewFile(file)} 
+                            className="px-3 py-2 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-all flex items-center gap-1"
+                          >
+                            <Eye size={12}/> Visualizar
+                          </button>
+                        </div>
                       </div>
-                      {/* Botão de Visualizar no Modal */}
-                      <button onClick={() => handleViewFile(file)} className="px-4 py-2 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg transition-all flex items-center gap-2">
-                        <Eye size={14}/> Visualizar
-                      </button>
                     </li> 
                   ))} 
                 </ul> 
@@ -322,7 +476,62 @@ const StatusBadge = ({ status }) => {
   return ( <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg tracking-widest ${styles[status] || styles['PENDENTE']}`}>{status}</span> ); 
 };
 const InputField = ({ label, type = "text", value, onChange, placeholder = "", highlight = false, list }) => ( <div className="flex flex-col gap-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label><input list={list} type={type} value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} placeholder={placeholder} className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold transition-all outline-none uppercase ${highlight ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 focus:border-blue-400 focus:bg-white text-slate-700'}`} /></div> );
-const FileUploadButton = ({ label, icon, onUpload, color }) => { const inputId = `file-${label}-${Math.random()}`; const colors = { blue: 'bg-blue-50 text-blue-600 hover:bg-blue-100', slate: 'bg-slate-50 text-slate-500 hover:bg-slate-100' }; return ( <div className="flex-1"><input type="file" id={inputId} className="hidden" onChange={(e) => { if (e.target.files?.[0]) onUpload(e.target.files[0].name); }} /><label htmlFor={inputId} className={`flex items-center justify-center gap-2 p-3 border border-dashed rounded-xl cursor-pointer font-black text-[10px] uppercase tracking-wider ${colors[color]}`}>{icon} {label}</label></div> ); };
+const FileUploadButton = ({ label, icon, onUpload, color, isUploading = false }) => { 
+  const inputId = `file-${label}-${Math.random()}`; 
+  const colors = { blue: 'bg-blue-50 text-blue-600 hover:bg-blue-100', slate: 'bg-slate-50 text-slate-500 hover:bg-slate-100' }; 
+  
+  const handleFileChange = (e) => { 
+    if (e.target.files?.[0]) {
+      const file = e.target.files[0];
+      
+      // Validar arquivo
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        alert(validation.error);
+        e.target.value = '';
+        return;
+      }
+      
+      // Passou na validação
+      onUpload({ 
+        file, 
+        name: file.name, 
+        size: formatFileSize(file.size),
+        date: new Date().toLocaleString() 
+      }); 
+      
+      // Limpar input para permitir mesmo arquivo novamente
+      e.target.value = '';
+    }
+  };
+  
+  return ( 
+    <div className="flex-1">
+      <input 
+        type="file" 
+        id={inputId} 
+        className="hidden" 
+        onChange={handleFileChange}
+        disabled={isUploading}
+      />
+      <label 
+        htmlFor={inputId} 
+        className={`flex items-center justify-center gap-2 p-3 border border-dashed rounded-xl cursor-pointer font-black text-[10px] uppercase tracking-wider transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : colors[color]}`}
+      >
+        {isUploading ? (
+          <>
+            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+            Enviando...
+          </>
+        ) : (
+          <>
+            {icon} {label}
+          </>
+        )}
+      </label>
+    </div> 
+  ); 
+};
 
 // --- MÓDULOS ---
 
@@ -402,7 +611,7 @@ const UserManagementModule = ({ usersList }) => {
   );
 };
 
-const EntryModule = ({ fdas, addFda, toggleFda, updateFdaNumber, saveItem, updateItem, deleteItem, allHistory, editTarget, clearEditTarget }) => {
+const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, saveItem, updateItem, deleteItem, allHistory, editTarget, clearEditTarget }) => {
   const [activeFdaId, setActiveFdaId] = useState(null);
   const [formData, setFormData] = useState({
     status: 'PENDENTE', navio: '', vencimento: '', servicos: '', documento: '', dataEmissao: '',
@@ -413,6 +622,9 @@ const EntryModule = ({ fdas, addFda, toggleFda, updateFdaNumber, saveItem, updat
   });
   const [anexosNF, setAnexosNF] = useState([]);
   const [anexosBoleto, setAnexosBoleto] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [previewImage, setPreviewImage] = useState(null);
 
   // Auto-fill Suggestions
   const clients = useMemo(() => [...new Set(allHistory.map(i => i.data.clienteFornecedor).filter(Boolean))], [allHistory]);
@@ -459,17 +671,84 @@ const EntryModule = ({ fdas, addFda, toggleFda, updateFdaNumber, saveItem, updat
     setFormData(newData);
   };
 
-  const handleSave = async (fdaId) => {
-      if (editTarget) {
-        await updateItem(editTarget.id, formData, anexosNF, anexosBoleto);
-        clearEditTarget();
+  // Função para gerar preview de imagem
+  const generateImagePreview = (file) => {
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPreviewImage({ name: file.name, url: e.target.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Função para deletar arquivo com confirmação
+  const handleDeleteFile = (file, source) => {
+    if (window.confirm(`Deseja deletar o arquivo "${file.name}"?`)) {
+      if (source === 'nf') {
+        setAnexosNF(anexosNF.filter(f => f !== file));
       } else {
-        await saveItem(fdaId, formData, anexosNF, anexosBoleto);
+        setAnexosBoleto(anexosBoleto.filter(f => f !== file));
       }
-      setFormData({ 
-        status: 'PENDENTE', navio: '', vencimento: '', servicos: '', documento: '', dataEmissao: '', valorBruto: 0, centroCusto: '', nfs: '', valorBase: 0, valorLiquido: 0, pis: 0, cofins: 0, csll: 0, guia5952: 0, irrf: 0, guia1708: 0, inss: 0, iss: 0, impostoRet: 0, multa: 0, juros: 0, total: 0, clienteFornecedor: '', cnpjCpf: '', banco: '', codigoBanco: '', agencia: '', contaCorrente: '', chavePix: '', dataPagamento: '', valorPago: 0, jurosPagos: 0
-      });
-      setAnexosNF([]); setAnexosBoleto([]); setActiveFdaId(null);
+      logAction(userEmail, 'DELETAR ARQUIVO LOCAL', `Arquivo removido: ${file.name}`);
+    }
+  };
+
+  // Função para download de arquivo
+  const handleDownloadFile = async (file) => {
+    try {
+      if (file.url) {
+        // Arquivo já salvo no Storage
+        const response = await fetch(file.url);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (file.file) {
+        // Arquivo local (antes de salvar)
+        const url = URL.createObjectURL(file.file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      logAction(userEmail, 'DOWNLOAD ARQUIVO', `Arquivo baixado: ${file.name}`);
+    } catch (error) {
+      console.error('Erro ao baixar arquivo:', error);
+      alert('Erro ao baixar arquivo');
+    }
+  };
+
+  const handleSave = async (fdaId) => {
+      try {
+        if (editTarget) {
+          // Atualiza o item existente (não cria duplicado)
+          await updateItem(editTarget.id, formData, anexosNF, anexosBoleto);
+          clearEditTarget();
+        } else {
+          // Cria novo item
+          await saveItem(fdaId, formData, anexosNF, anexosBoleto);
+        }
+        
+        // Limpa o formulário após sucesso
+        setFormData({ 
+          status: 'PENDENTE', navio: '', vencimento: '', servicos: '', documento: '', dataEmissao: '', valorBruto: 0, centroCusto: '', nfs: '', valorBase: 0, valorLiquido: 0, pis: 0, cofins: 0, csll: 0, guia5952: 0, irrf: 0, guia1708: 0, inss: 0, iss: 0, impostoRet: 0, multa: 0, juros: 0, total: 0, clienteFornecedor: '', cnpjCpf: '', banco: '', codigoBanco: '', agencia: '', contaCorrente: '', chavePix: '', dataPagamento: '', valorPago: 0, jurosPagos: 0
+        });
+        setAnexosNF([]);
+        setAnexosBoleto([]);
+        setActiveFdaId(null);
+      } catch (error) {
+        console.error('Erro ao salvar:', error);
+        alert('Erro ao salvar o item. Tente novamente.');
+      }
   };
 
   return (
@@ -534,21 +813,79 @@ const EntryModule = ({ fdas, addFda, toggleFda, updateFdaNumber, saveItem, updat
                                 <InputField label="PIX" value={formData.chavePix} onChange={v => handleInputChange('chavePix', v)} />
                             </div>
                             <div className="flex gap-2 mt-4">
-                                <FileUploadButton label="Nota" icon={<Receipt size={14}/>} onUpload={n => setAnexosNF([...anexosNF, {id: Date.now(), name: n, date: new Date().toLocaleString()}])} color="blue" />
-                                <FileUploadButton label="Boleto" icon={<Banknote size={14}/>} onUpload={n => setAnexosBoleto([...anexosBoleto, {id: Date.now(), name: n, date: new Date().toLocaleString()}])} color="slate" />
+                                <FileUploadButton label="Nota" icon={<Receipt size={14}/>} onUpload={fileData => { 
+                                  setAnexosNF([...anexosNF, fileData]);
+                                  generateImagePreview(fileData.file);
+                                }} color="blue" isUploading={isUploading} />
+                                <FileUploadButton label="Boleto" icon={<Banknote size={14}/>} onUpload={fileData => {
+                                  setAnexosBoleto([...anexosBoleto, fileData]);
+                                  generateImagePreview(fileData.file);
+                                }} color="slate" isUploading={isUploading} />
                             </div>
-                            <div className="space-y-1">
+
+                            {/* Preview de Imagem */}
+                            {previewImage && (
+                              <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="text-[10px] font-black text-slate-400 uppercase">Visualização</span>
+                                  <button onClick={() => setPreviewImage(null)} className="text-slate-400 hover:text-slate-600"><X size={14}/></button>
+                                </div>
+                                <img src={previewImage.url} alt={previewImage.name} className="max-h-48 rounded-lg object-contain mx-auto" />
+                                <p className="text-[10px] text-slate-600 font-bold mt-2 truncate">{previewImage.name}</p>
+                              </div>
+                            )}
+
+                            {/* Lista de Arquivos com Melhorias */}
+                            <div className="space-y-2 mt-4">
                                 {[...anexosNF, ...anexosBoleto].map((file, idx) => (
-                                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border text-xs">
-                                        <span className="truncate w-32">{file.name}</span>
-                                        <button onClick={() => {
-                                            if(anexosNF.includes(file)) setAnexosNF(anexosNF.filter(f => f !== file));
-                                            else setAnexosBoleto(anexosBoleto.filter(f => f !== file));
-                                        }} className="text-red-500 hover:bg-red-50 rounded p-1"><X size={12}/></button>
+                                    <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200 hover:border-blue-300 transition-all group">
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            {file.file?.type.startsWith('image/') ? (
+                                              <img src={URL.createObjectURL(file.file)} alt={file.name} className="w-8 h-8 rounded object-cover" />
+                                            ) : (
+                                              <FileText size={16} className="text-slate-400 flex-shrink-0" />
+                                            )}
+                                            <div className="min-w-0">
+                                              <p className="truncate font-bold text-xs text-slate-800">{file.name}</p>
+                                              <p className="text-[9px] text-slate-400">Tamanho: {file.size || 'N/A'}</p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-1 ml-2 flex-shrink-0">
+                                          {file.file && (
+                                            <>
+                                              <button 
+                                                onClick={() => handleDownloadFile(file)}
+                                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title="Download"
+                                              >
+                                                <Download size={14} />
+                                              </button>
+                                              <button 
+                                                onClick={() => handleDeleteFile(file, anexosNF.includes(file) ? 'nf' : 'boleto')}
+                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                title="Deletar"
+                                              >
+                                                <Trash2 size={14} />
+                                              </button>
+                                            </>
+                                          )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
-                            <button onClick={() => handleSave(f.id)} className="w-full py-3 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl hover:bg-green-700 shadow-lg mt-4">{editTarget ? 'Atualizar Item' : 'Gravar Lançamento'}</button>
+
+                            <button onClick={() => handleSave(f.id)} disabled={isUploading} className="w-full py-3 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl hover:bg-green-700 shadow-lg mt-4 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                              {isUploading ? (
+                                <>
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                  Salvando...
+                                </>
+                              ) : (
+                                editTarget ? 'Atualizar Item' : 'Gravar Lançamento'
+                              )}
+                            </button>
                         </div>
                     </div>
                 </div>
