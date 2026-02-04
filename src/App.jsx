@@ -270,7 +270,89 @@ const EntryModule = ({ fdas, addFda, toggleFda, updateFdaNumber, addItem, update
     const newFiles = [...currentFiles, { id: crypto.randomUUID(), name: fileName, date: new Date().toLocaleString() }];
     updateFiles(item.id, type, newFiles);
   };
-  return ( <div className="max-w-6xl mx-auto"><div className="flex justify-between items-center mb-10"><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Lançamento de Itens</h2><button onClick={addFda} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-slate-800 shadow-xl transition-all"><Plus size={18}/> Novo Atendimento</button></div><div className="space-y-8">{fdas.map(f => (<div key={f.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><div className="bg-slate-50 p-6 flex justify-between items-center cursor-pointer" onClick={() => toggleFda(f.id, f.isOpen)}><div className="flex items-center gap-5"><div className={`p-2 rounded-lg ${f.isOpen ? 'bg-blue-100 text-blue-600' : 'bg-slate-200'}`}>{f.isOpen ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</div><div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ref. Lote</label><input type="text" value={f.number} onClick={e => e.stopPropagation()} onChange={e => updateFdaNumber(f.id, e.target.value)} className="bg-transparent font-mono text-xl font-black text-blue-600 focus:outline-none w-full" /></div></div><button onClick={e => { e.stopPropagation(); addItem(f.id); }} className="bg-white border-2 border-blue-600 text-blue-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest">Novo Serviço</button></div>{f.isOpen && (<div className="p-6 space-y-4">{f.items.map((it, idx) => (<div key={it.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:border-blue-300 shadow-sm"><div className="p-5 flex justify-between items-center cursor-pointer" onClick={() => setActiveItemId(activeItemId === it.id ? null : it.id)}><div className="flex gap-5"><div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-400 text-[10px]">{String(idx+1).padStart(2, '0')}</div><div><p className="font-black text-slate-700 uppercase text-sm">{it.data.servicos || 'Pendente de descrição'}</p><p className="text-[10px] text-slate-400 font-black uppercase">Venc: {it.data.vencimento || '--'} • R$ {parseFloat(it.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div></div><div className="flex items-center gap-3"><StatusBadge status={it.data.status}/><button onClick={e => { e.stopPropagation(); setActiveItemId(it.id); }} className="p-2 text-slate-400 hover:text-blue-600"><Edit size={18}/></button><button onClick={e => { e.stopPropagation(); deleteItem(it.id); }} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button></div></div>{activeItemId === it.id && (<div className="p-8 border-t grid grid-cols-1 md:grid-cols-3 gap-10"><div className="space-y-5"><InputField label="Descrição" value={it.data.servicos} onChange={v => handleUpdate(it, 'servicos', v)} /><div className="grid grid-cols-2 gap-3"><InputField label="Doc Nº" value={it.data.documento} onChange={v => handleUpdate(it, 'documento', v)} /><InputField label="NFs" value={it.data.nfs} onChange={v => handleUpdate(it, 'nfs', v)} /></div><div className="grid grid-cols-2 gap-3"><InputField label="Emissão" type="date" value={it.data.dataEmissao} onChange={v => handleUpdate(it, 'dataEmissao', v)} /><InputField label="Vencimento" type="date" value={it.data.vencimento} onChange={v => handleUpdate(it, 'vencimento', v)} /></div><InputField label="Valor Bruto (R$)" type="number" value={it.data.valorBruto} onChange={v => handleUpdate(it, 'valorBruto', v)} highlight /></div><div className="space-y-5"><h4 className="font-black text-[10px] uppercase text-blue-600 tracking-widest border-b border-blue-50 pb-2">Impostos</h4><div className="grid grid-cols-2 gap-3"><InputField label="GUIA 5952" type="number" value={it.data.guia5952} onChange={v => handleUpdate(it, 'guia5952', v)} /><InputField label="IRRF" type="number" value={it.data.irrf} onChange={v => handleUpdate(it, 'irrf', v)} /><InputField label="INSS" type="number" value={it.data.inss} onChange={v => handleUpdate(it, 'inss', v)} /><InputField label="ISS" type="number" value={it.data.iss} onChange={v => handleUpdate(it, 'iss', v)} /></div><InputField label="Fornecedor" value={it.data.clienteFornecedor} onChange={v => handleUpdate(it, 'clienteFornecedor', v)} /></div><div className="space-y-5"><h4 className="font-black text-[10px] uppercase text-blue-600 tracking-widest border-b border-blue-50 pb-2">Arquivos</h4><div className="flex gap-3"><FileUploadButton label="Nota" icon={<Receipt size={16}/>} onUpload={n => handleFileUpload(it, 'NF', n)} color="blue" /><FileUploadButton label="Boleto" icon={<Banknote size={16}/>} onUpload={n => handleFileUpload(it, 'Boleto', n)} color="slate" /></div><div className="text-[10px] bg-slate-50 p-4 rounded-xl border font-bold uppercase tracking-tight overflow-y-auto max-h-24">{(it.anexosNF||[]).map(an => <div key={an.id} className="text-blue-600">📎 {an.name}</div>)}{(it.anexosBoleto||[]).map(an => <div key={an.id} className="text-slate-500">📄 {an.name}</div>)}</div><div className="bg-blue-600 p-4 rounded-xl text-white font-black"><label className="text-[10px] uppercase opacity-80">Total</label><div className="text-2xl">R$ {parseFloat(it.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div></div></div></div>)}</div>))}</div>)}</div>))}</div> );
+  return (
+    <div className="max-w-6xl mx-auto">
+      <div className="flex justify-between items-center mb-10">
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Lançamento de Itens</h2>
+        <button onClick={addFda} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-slate-800 shadow-xl transition-all">
+          <Plus size={18}/> Novo Atendimento
+        </button>
+      </div>
+      <div className="space-y-8">
+        {fdas.map(f => (
+          <div key={f.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50 p-6 flex justify-between items-center cursor-pointer" onClick={() => toggleFda(f.id, f.isOpen)}>
+              <div className="flex items-center gap-5">
+                <div className={`p-2 rounded-lg ${f.isOpen ? 'bg-blue-100 text-blue-600' : 'bg-slate-200'}`}>
+                  {f.isOpen ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ref. Lote</label>
+                  <input type="text" value={f.number} onClick={e => e.stopPropagation()} onChange={e => updateFdaNumber(f.id, e.target.value)} className="bg-transparent font-mono text-xl font-black text-blue-600 focus:outline-none w-full" />
+                </div>
+              </div>
+              <button onClick={e => { e.stopPropagation(); addItem(f.id); }} className="bg-white border-2 border-blue-600 text-blue-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest">Novo Serviço</button>
+            </div>
+            {f.isOpen && (
+              <div className="p-6 space-y-4">
+                {f.items.map((it, idx) => (
+                  <div key={it.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:border-blue-300 shadow-sm">
+                    <div className="p-5 flex justify-between items-center cursor-pointer" onClick={() => setActiveItemId(activeItemId === it.id ? null : it.id)}>
+                      <div className="flex gap-5">
+                        <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-400 text-[10px] tracking-tighter">{String(idx+1).padStart(2, '0')}</div>
+                        <div>
+                          <p className="font-black text-slate-700 uppercase text-sm">{it.data.servicos || 'Pendente de descrição'}</p>
+                          <p className="text-[10px] text-slate-400 font-black uppercase">Venc: {it.data.vencimento || '--'} • R$ {it.data.total}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <StatusBadge status={it.data.status}/>
+                        <button onClick={e => { e.stopPropagation(); setActiveItemId(it.id); }} className="p-2 text-slate-400 hover:text-blue-600"><Edit size={18}/></button>
+                        <button onClick={e => { e.stopPropagation(); deleteItem(it.id); }} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button>
+                      </div>
+                    </div>
+                    {activeItemId === it.id && (
+                      <div className="p-8 border-t grid grid-cols-1 md:grid-cols-3 gap-10">
+                        <div className="space-y-5">
+                          <InputField label="Descrição" value={it.data.servicos} onChange={v => handleUpdate(it, 'servicos', v)} />
+                          <div className="grid grid-cols-2 gap-3">
+                            <InputField label="Doc Nº" value={it.data.documento} onChange={v => handleUpdate(it, 'documento', v)} />
+                            <InputField label="Vencimento" type="date" value={it.data.vencimento} onChange={v => handleUpdate(it, 'vencimento', v)} />
+                          </div>
+                          <InputField label="Valor Bruto (R$)" type="number" value={it.data.valorBruto} onChange={v => handleUpdate(it, 'valorBruto', v)} highlight />
+                        </div>
+                        <div className="space-y-5">
+                          <div className="grid grid-cols-2 gap-3">
+                            <InputField label="GUIA 5952" type="number" value={it.data.guia5952} onChange={v => handleUpdate(it, 'guia5952', v)} />
+                            <InputField label="INSS" type="number" value={it.data.inss} onChange={v => handleUpdate(it, 'inss', v)} />
+                          </div>
+                          <InputField label="Fornecedor" value={it.data.clienteFornecedor} onChange={v => handleUpdate(it, 'clienteFornecedor', v)} />
+                        </div>
+                        <div className="space-y-5">
+                          <div className="flex gap-3">
+                            <FileUploadButton label="Nota" icon={<Receipt size={16}/>} onUpload={n => updateFiles(it.id, 'NF', [...(it.anexosNF||[]), {id: Date.now(), name: n, date: new Date().toLocaleString()}])} color="blue" />
+                            <FileUploadButton label="Boleto" icon={<Banknote size={16}/>} onUpload={n => updateFiles(it.id, 'Boleto', [...(it.anexosBoleto||[]), {id: Date.now(), name: n, date: new Date().toLocaleString()}])} color="slate" />
+                          </div>
+                          <div className="text-[10px] bg-slate-50 p-4 rounded-xl border font-bold uppercase tracking-tight overflow-y-auto max-h-24">
+                            {(it.anexosNF||[]).map(an => <div key={an.id} className="text-blue-600">📎 {an.name}</div>)}
+                            {(it.anexosBoleto||[]).map(an => <div key={an.id} className="text-slate-500">📄 {an.name}</div>)}
+                          </div>
+                          <div className="bg-blue-600 p-4 rounded-xl text-white font-black">
+                            <label className="text-[10px] uppercase opacity-80">Total</label>
+                            <div className="text-2xl">R$ {parseFloat(it.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 const LaunchedModule = ({ allItems, onEdit, onDelete, onPreview }) => {
@@ -286,7 +368,62 @@ const LaunchedModule = ({ allItems, onEdit, onDelete, onPreview }) => {
   const exportXls = () => { const t = `<table><tr><th>Data</th><th>Item</th><th>FDA</th><th>Valor</th><th>Status</th></tr>${filtered.map(i => `<tr><td>${i.data.vencimento}</td><td>${i.data.servicos}</td><td>${i.fdaNumber}</td><td>${i.data.total}</td><td>${i.data.status}</td></tr>`).join('')}</table>`; const b = new Blob([t], {type: 'application/vnd.ms-excel'}); const l = document.createElement('a'); l.href = URL.createObjectURL(b); l.download = 'Historico_LMA.xls'; l.click(); setEO(false); };
   const exportCSV = () => { const h = ["Vencimento","Servico","Fornecedor","FDA","Total","Status"]; const r = filtered.map(i => [i.data.vencimento || '-', `"${i.data.servicos || ''}"`, `"${i.data.clienteFornecedor || ''}"`, i.fdaNumber, i.data.total, i.data.status]); const c = "data:text/csv;charset=utf-8," + h.join(",") + "\n" + r.map(e => e.join(",")).join("\n"); const l = document.createElement("a"); l.setAttribute("href", encodeURI(c)); l.setAttribute("download", "LMA_Lancamentos.csv"); document.body.appendChild(l); l.click(); setEO(false); };
 
-  return ( <div className="max-w-7xl mx-auto"><header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-5"><div><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Histórico Lançado</h2></div><div className="flex items-center gap-3 w-full md:w-auto"><div className="relative flex-1 md:flex-none"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18}/><input type="text" placeholder="Filtrar..." className="pl-12 pr-6 py-3 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-blue-600 outline-none w-full md:w-64 transition-all" value={f} onChange={e => setF(e.target.value)} /></div><div className="relative" ref={exportRef}><button onClick={() => setEO(!eO)} className="bg-white border-2 border-slate-200 text-slate-600 px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:border-blue-600 transition-all"><Download size={16}/> Baixar</button>{eO && (<div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in slide-in-from-top-2"><button onClick={() => { window.print(); setEO(false); }} className="w-full text-left px-5 py-3 text-[10px] font-black uppercase text-slate-600 hover:bg-blue-50 flex items-center gap-3"><FileIcon size={14} className="text-red-500"/> PDF (Imprimir)</button><button onClick={exportXls} className="w-full text-left px-5 py-3 text-[10px] font-black uppercase text-slate-600 hover:bg-blue-50 flex items-center gap-3"><FileSpreadsheet size={14} className="text-green-600"/> Excel (XLS)</button><button onClick={exportCSV} className="w-full text-left px-5 py-3 text-[10px] font-black uppercase text-slate-600 hover:bg-blue-50 flex items-center gap-3"><FileType size={14} className="text-slate-400"/> CSV (Texto)</button></div>)}</div></div></header><div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer" onClick={() => { setSF('vencimento'); setSD(sD === 'asc' ? 'desc' : 'asc'); }}>Vencimento</th><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviço / FDA</th><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center print:hidden">Ações</th></tr></thead><tbody className="divide-y divide-slate-50 font-medium">{filtered.map(i => (<tr key={i.id} className="hover:bg-slate-50"><td className="p-5 font-bold text-slate-800">{i.data.vencimento}</td><td className="p-5"><div className="font-black text-slate-800 uppercase text-xs">{i.data.servicos}</div><div className="text-[10px] text-blue-600 font-black mt-1">{i.fdaNumber}</div></td><td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(i.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td><td className="p-5 text-center"><StatusBadge status={i.data.status} /></td><td className="p-5 text-center print:hidden"><div className="flex items-center justify-center gap-2"><button onClick={() => onPreview([...(i.anexosNF||[]), ...(i.anexosBoleto||[])], `Documentos`)} className="p-2 text-slate-400 hover:text-blue-600"><Eye size={18}/></button><button onClick={onEdit} className="p-2 text-slate-400 hover:text-green-600"><Edit size={18}/></button><button onClick={() => onDelete(i.id)} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button></div></td></tr>))}</tbody></table></div></div> );
+  return ( 
+    <div className="max-w-7xl mx-auto">
+      <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
+        <div><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Histórico Lançado</h2></div>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:flex-none">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18}/>
+            <input type="text" placeholder="Filtrar..." className="pl-12 pr-6 py-3 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-blue-600 outline-none w-full md:w-64 transition-all" value={f} onChange={e => setF(e.target.value)} />
+          </div>
+          <div className="relative" ref={exportRef}>
+            <button onClick={() => setEO(!eO)} className="bg-white border-2 border-slate-200 text-slate-600 px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:border-blue-600 transition-all"><Download size={16}/> Baixar</button>
+            {eO && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                <button onClick={() => { window.print(); setEO(false); }} className="w-full text-left px-5 py-3 text-[10px] font-black uppercase text-slate-600 hover:bg-blue-50 flex items-center gap-3"><FileIcon size={14} className="text-red-500"/> PDF (Imprimir)</button>
+                <button onClick={exportXls} className="w-full text-left px-5 py-3 text-[10px] font-black uppercase text-slate-600 hover:bg-blue-50 flex items-center gap-3"><FileSpreadsheet size={14} className="text-green-600"/> Excel (XLS)</button>
+                <button onClick={exportCSV} className="w-full text-left px-5 py-3 text-[10px] font-black uppercase text-slate-600 hover:bg-blue-50 flex items-center gap-3"><FileType size={14} className="text-slate-400"/> CSV (Texto)</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer" onClick={() => { setSF('vencimento'); setSD(sD === 'asc' ? 'desc' : 'asc'); }}>Vencimento</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviço / FDA</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center print:hidden">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 font-medium">
+            {filtered.map(i => (
+              <tr key={i.id} className="hover:bg-slate-50">
+                <td className="p-5 font-bold text-slate-800">{i.data.vencimento}</td>
+                <td className="p-5">
+                  <div className="font-black text-slate-800 uppercase text-xs">{i.data.servicos}</div>
+                  <div className="text-[10px] text-blue-600 font-black mt-1">{i.fdaNumber}</div>
+                </td>
+                <td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(i.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                <td className="p-5 text-center"><StatusBadge status={i.data.status} /></td>
+                <td className="p-5 text-center print:hidden">
+                  <div className="flex items-center justify-center gap-2">
+                    <button onClick={() => onPreview([...(i.anexosNF||[]), ...(i.anexosBoleto||[])])} className="p-2 text-slate-400 hover:text-blue-600"><Eye size={18}/></button>
+                    <button onClick={onEdit} className="p-2 text-slate-400 hover:text-green-600"><Edit size={18}/></button>
+                    <button onClick={() => onDelete(i.id)} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div> 
+  );
 };
 
 const FinanceModule = ({ allItems, isMaster, updateItem, onPreview, onEdit, onDelete }) => {
@@ -299,7 +436,63 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onPreview, onEdit, onDe
     else if (aT === 'pagos') its = allItems.filter(i => i.data.status === 'Pago');
     return its.sort((a, b) => new Date(a.data.vencimento) - new Date(b.data.vencimento));
   }, [allItems, aT]);
-  const handleStatus = async (id, cur, s) => { const n = new Date().toISOString().split('T')[0]; let ups = { status: s }; if (s === 'Provisionado') ups.dataProvisionamento = n; if (s === 'Aprovado') ups.dataAprovacao = n; if (s === 'Pago') ups.dataPagamentoReal = n; await updateItem(id, { ...cur, ...ups }); };
+  
+  const handleStatus = async (id, cur, s) => { 
+    const n = new Date().toISOString().split('T')[0]; 
+    let ups = { status: s }; 
+    if (s === 'Provisionado') ups.dataProvisionamento = n; 
+    if (s === 'Aprovado') ups.dataAprovacao = n; 
+    if (s === 'Pago') ups.dataPagamentoReal = n; 
+    await updateItem(id, { ...cur, ...ups }); 
+  };
+  
   const tabs = [{ i: 'pagar', l: 'A Pagar' }, { i: 'provisionado', l: 'Provisionado' }, { i: 'aprovado', l: 'Aprovado' }, { i: 'pagos', l: 'Liquidados' }];
-  return ( <div className="max-w-full"><header className="mb-10"><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Contas a Pagar</h2></header><div className="flex gap-2 border-b mb-8 overflow-x-auto">{tabs.map(t => (<button key={t.i} onClick={() => setAT(t.i)} className={`px-10 py-3 text-[10px] font-black uppercase tracking-widest border-b-4 transition-all whitespace-nowrap ${aT === t.i ? `border-blue-600 text-blue-600 bg-blue-50/50` : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t.l}</button>))}</div><div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vencimento</th><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviço / FDA</th><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th><th className="p-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Ações</th></tr></thead><tbody className="divide-y divide-slate-50 font-medium">{items.length === 0 ? <tr><td colSpan="4" className="p-10 text-center text-slate-300 font-black uppercase text-xs italic">Vazio</td></tr> : items.map(it => (<tr key={it.id} className="hover:bg-slate-50"><td className="p-5 font-bold text-slate-800">{it.data.vencimento}</td><td className="p-5"><div className="font-black text-slate-800 uppercase text-xs">{it.data.servicos}</div><div className="text-[10px] text-blue-600 font-black mt-1">{it.fdaNumber}</div></td><td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(it.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td><td className="p-5 text-center"><div className="flex items-center justify-center gap-3">{aT === 'pagar' && <button onClick={() => handleStatus(it.id, it.data, 'Provisionado')} className="px-5 py-2 bg-yellow-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Provisionar</button>}{aT === 'provisionado' && <button onClick={() => handleStatus(it.id, it.data, 'Aprovado')} disabled={!isMaster} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg ${isMaster ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{isMaster ? 'Aprovar' : 'Pendente'}</button>}{aT === 'aprovado' && <button onClick={() => handleStatus(it.id, it.data, 'Pago')} className="px-5 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Liquidar</button>}<button onClick={() => onPreview([...(it.anexosNF||[]), ...(it.anexosBoleto||[])], `Documentos`)} className="p-2 text-slate-400 hover:text-blue-600"><Paperclip size={18}/></button><button onClick={onEdit} className="p-2 text-slate-400 hover:text-blue-600 transition-all"><Edit size={18}/></button><button onClick={() => onDelete(it.id)} className="p-2 text-slate-400 hover:text-red-600 transition-all"><Trash2 size={18}/></button></div></td></tr>))}</tbody></table></div></div> );
+  
+  return ( 
+    <div className="max-w-full">
+      <header className="mb-10"><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Contas a Pagar</h2></header>
+      <div className="flex gap-2 border-b mb-8 overflow-x-auto">
+        {tabs.map(t => (
+          <button key={t.i} onClick={() => setAT(t.i)} className={`px-10 py-3 text-[10px] font-black uppercase tracking-widest border-b-4 transition-all whitespace-nowrap ${aT === t.i ? `border-blue-600 text-blue-600 bg-blue-50/50` : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t.l}</button>
+        ))}
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vencimento</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviço / FDA</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
+              <th className="p-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 font-medium">
+            {items.length === 0 ? 
+              <tr><td colSpan="4" className="p-10 text-center text-slate-300 font-black uppercase text-xs italic">Vazio</td></tr> 
+              : items.map(it => (
+                <tr key={it.id} className="hover:bg-slate-50">
+                  <td className="p-5 font-bold text-slate-800">{it.data.vencimento}</td>
+                  <td className="p-5">
+                    <div className="font-black text-slate-800 uppercase text-xs">{it.data.servicos}</div>
+                    <div className="text-[10px] text-blue-600 font-black mt-1">{it.fdaNumber}</div>
+                  </td>
+                  <td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(it.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                  <td className="p-5 text-center">
+                    <div className="flex items-center justify-center gap-3">
+                      {aT === 'pagar' && <button onClick={() => handleStatus(it.id, it.data, 'Provisionado')} className="px-5 py-2 bg-yellow-500 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Provisionar</button>}
+                      {aT === 'provisionado' && <button onClick={() => handleStatus(it.id, it.data, 'Aprovado')} disabled={!isMaster} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg ${isMaster ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{isMaster ? 'Aprovar' : 'Pendente'}</button>}
+                      {aT === 'aprovado' && <button onClick={() => handleStatus(it.id, it.data, 'Pago')} className="px-5 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Liquidar</button>}
+                      <button onClick={() => onPreview([...(it.anexosNF||[]), ...(it.anexosBoleto||[])], `Documentos`)} className="p-2 text-slate-400 hover:text-blue-600"><Paperclip size={18}/></button>
+                      <button onClick={onEdit} className="p-2 text-slate-400 hover:text-blue-600 transition-all"><Edit size={18}/></button>
+                      <button onClick={() => onDelete(it.id)} className="p-2 text-slate-400 hover:text-red-600 transition-all"><Trash2 size={18}/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div> 
+  );
 };
