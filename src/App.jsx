@@ -263,43 +263,41 @@ const Dashboard = ({ user, onNoAccess }) => {
   
   const saveItem = async (fdaId, itemData, filesNF, filesBoleto) => {
       try {
-        // Processa arquivos de Nota Fiscal
-        const nfUrls = [];
-        for (const file of filesNF) {
-          if (file.file) { // Se for um novo arquivo (File object)
-            const fileName = `${fdaId}/${Date.now()}_${file.file.name}`;
+        // Upload paralelo de arquivos para melhor performance
+        const uploadNFPromises = filesNF.map(async (file) => {
+          if (file.file) {
+            const fileName = `${fdaId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
             const storageRef = ref(storage, `anexosNF/${fileName}`);
             await uploadBytes(storageRef, file.file);
             const downloadUrl = await getDownloadURL(storageRef);
-            nfUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
-          } else {
-            // Se for um arquivo já existente, mantém como está
-            nfUrls.push(file);
+            return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
           }
-        }
+          return file;
+        });
 
-        // Processa arquivos de Boleto
-        const boletoUrls = [];
-        for (const file of filesBoleto) {
-          if (file.file) { // Se for um novo arquivo (File object)
-            const fileName = `${fdaId}/${Date.now()}_${file.file.name}`;
+        const uploadBoletoPromises = filesBoleto.map(async (file) => {
+          if (file.file) {
+            const fileName = `${fdaId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
             const storageRef = ref(storage, `anexosBoleto/${fileName}`);
             await uploadBytes(storageRef, file.file);
             const downloadUrl = await getDownloadURL(storageRef);
-            boletoUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
-          } else {
-            // Se for um arquivo já existente, mantém como está
-            boletoUrls.push(file);
+            return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
           }
-        }
+          return file;
+        });
 
-        // Salva o item com as URLs dos arquivos e histórico
+        // Aguarda todos os uploads em paralelo
+        const [nfUrls, boletoUrls] = await Promise.all([
+          Promise.all(uploadNFPromises),
+          Promise.all(uploadBoletoPromises)
+        ]);
+
+        // Salva o item com as URLs dos arquivos
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'items'), {
           fdaId,
           data: itemData,
           anexosNF: nfUrls,
           anexosBoleto: boletoUrls,
-          // Versionamento - mantém histórico de anexos anteriores
           historico_anexos: {
             nf: nfUrls.map(f => ({ ...f, uploadedAt: new Date().toISOString() })),
             boleto: boletoUrls.map(f => ({ ...f, uploadedAt: new Date().toISOString() }))
@@ -307,10 +305,11 @@ const Dashboard = ({ user, onNoAccess }) => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
+        
         logAction(userEmail, 'GRAVAR ITEM', `Item gravado para FDA ID ${fdaId} - Serviço: ${itemData.servicos}`);
       } catch (error) {
         console.error('Erro ao salvar item:', error);
-        throw error;
+        throw new Error(`Falha ao salvar: ${error.message}`);
       }
   };
 
@@ -318,50 +317,51 @@ const Dashboard = ({ user, onNoAccess }) => {
       try {
         const updatePayload = { data };
         
-        // Processa novos arquivos de Nota Fiscal se fornecidos
+        // Upload paralelo dos arquivos
+        const uploadPromises = [];
+
+        // Processa arquivos de Nota Fiscal se fornecidos
         if (filesNF && filesNF.length > 0) {
-          const nfUrls = [];
-          for (const file of filesNF) {
-            if (file.file) { // Se for um novo arquivo (File object)
-              const fileName = `${id}/${Date.now()}_${file.file.name}`;
+          const nfPromises = filesNF.map(async (file) => {
+            if (file.file) {
+              const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
               const storageRef = ref(storage, `anexosNF/${fileName}`);
               await uploadBytes(storageRef, file.file);
               const downloadUrl = await getDownloadURL(storageRef);
-              nfUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
+              return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
             } else if (file.url) {
-              // Se já está no Storage, mantém
-              nfUrls.push(file);
+              return file;
             }
-          }
-          updatePayload.anexosNF = nfUrls;
+          });
+          const nfUrls = await Promise.all(nfPromises);
+          updatePayload.anexosNF = nfUrls.filter(Boolean);
         }
 
-        // Processa novos arquivos de Boleto se fornecidos
+        // Processa arquivos de Boleto se fornecidos
         if (filesBoleto && filesBoleto.length > 0) {
-          const boletoUrls = [];
-          for (const file of filesBoleto) {
-            if (file.file) { // Se for um novo arquivo (File object)
-              const fileName = `${id}/${Date.now()}_${file.file.name}`;
+          const boletoPromises = filesBoleto.map(async (file) => {
+            if (file.file) {
+              const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
               const storageRef = ref(storage, `anexosBoleto/${fileName}`);
               await uploadBytes(storageRef, file.file);
               const downloadUrl = await getDownloadURL(storageRef);
-              boletoUrls.push({ name: file.file.name, url: downloadUrl, date: new Date().toLocaleString() });
+              return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
             } else if (file.url) {
-              // Se já está no Storage, mantém
-              boletoUrls.push(file);
+              return file;
             }
-          }
-          updatePayload.anexosBoleto = boletoUrls;
+          });
+          const boletoUrls = await Promise.all(boletoPromises);
+          updatePayload.anexosBoleto = boletoUrls.filter(Boolean);
         }
         
-        // Adiciona timestamp de atualização e mantém histórico
+        // Adiciona timestamp de atualização
         updatePayload.updatedAt = new Date().toISOString();
         
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', id), updatePayload);
         logAction(userEmail, 'ATUALIZAR ITEM', `Item atualizado: ${data.servicos} - Status: ${data.status}`);
       } catch (error) {
         console.error('Erro ao atualizar item:', error);
-        throw error;
+        throw new Error(`Falha ao atualizar: ${error.message}`);
       }
   };
 
@@ -816,6 +816,7 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
   const [anexosNF, setAnexosNF] = useState([]);
   const [anexosBoleto, setAnexosBoleto] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
   const [previewImage, setPreviewImage] = useState(null);
 
@@ -921,6 +922,19 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
   };
 
   const handleSave = async (fdaId) => {
+      // Validação básica
+      if (!formData.servicos || !formData.vencimento) {
+        alert('Por favor, preencha os campos obrigatórios: Serviço e Vencimento');
+        return;
+      }
+
+      // Previne múltiplos cliques
+      if (isSaving) {
+        return;
+      }
+
+      setIsSaving(true);
+
       try {
         if (editTarget) {
           // Atualiza o item existente (não cria duplicado)
@@ -939,9 +953,14 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
         setAnexosNF([]);
         setAnexosBoleto([]);
         setActiveFdaId(null);
+
+        // Feedback de sucesso
+        alert(editTarget ? '✓ Item atualizado com sucesso!' : '✓ Item gravado com sucesso!');
       } catch (error) {
         console.error('Erro ao salvar:', error);
-        alert('Erro ao salvar o item. Tente novamente.');
+        alert('❌ Erro ao salvar o item. Verifique os anexos e tente novamente.\n\nDetalhes: ' + error.message);
+      } finally {
+        setIsSaving(false);
       }
   };
 
@@ -1070,14 +1089,38 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
                                 ))}
                             </div>
 
-                            <button onClick={() => handleSave(f.id)} disabled={isUploading} className="w-full py-3 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl hover:bg-green-700 shadow-lg mt-4 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
-                              {isUploading ? (
+                            {/* Banner de Status de Salvamento */}
+                            {isSaving && (
+                              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mt-4 animate-pulse">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-6 h-6 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                  <div>
+                                    <p className="font-black text-blue-800 text-sm uppercase tracking-wide">
+                                      {anexosNF.filter(f => f.file).length + anexosBoleto.filter(f => f.file).length > 0 
+                                        ? '📤 Enviando arquivos para o servidor...' 
+                                        : '💾 Salvando dados...'}
+                                    </p>
+                                    <p className="text-xs text-blue-600 mt-1">Por favor, aguarde. Não feche esta janela.</p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            <button 
+                              onClick={() => handleSave(f.id)} 
+                              disabled={isSaving || isUploading} 
+                              className="w-full py-4 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl hover:bg-green-700 shadow-lg mt-6 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                            >
+                              {isSaving ? (
                                 <>
-                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                  Salvando...
+                                  <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                                  {anexosNF.length > 0 || anexosBoleto.length > 0 ? 'Enviando Arquivos...' : 'Salvando...'}
                                 </>
                               ) : (
-                                editTarget ? 'Atualizar Item' : 'Gravar Lançamento'
+                                <>
+                                  <Save size={18} />
+                                  {editTarget ? 'Atualizar Item' : 'Gravar Lançamento'}
+                                </>
                               )}
                             </button>
                         </div>
