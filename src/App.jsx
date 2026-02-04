@@ -155,7 +155,7 @@ const Dashboard = ({ user, onNoAccess }) => {
   const [userPermissions, setUserPermissions] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [modalPreview, setModalPreview] = useState(null);
-  const [itemToEdit, setItemToEdit] = useState(null); // Estado para gerenciar edição
+  const [itemToEdit, setItemToEdit] = useState(null); 
   
   const userEmail = user.email;
   const isMaster = userEmail === MASTER_USER;
@@ -312,7 +312,8 @@ const UserManagementModule = ({ usersList }) => {
   const [newUserEmail, setNewUserEmail] = useState('');
   const handleUpdate = async (email, mod, has) => { const user = usersList.find(u => u.email === email); let mods = user ? (user.modules || []) : []; if (has) { if (!mods.includes(mod)) mods.push(mod); } else { mods = mods.filter(m => m !== mod); } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', email), { modules: mods }, { merge: true }); };
   const addUser = async () => { if (!newUserEmail) return; await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', newUserEmail.toLowerCase().trim()), { modules: ['entry'] }); setNewUserEmail(''); };
-  const modules = [{ k: 'entry', l: 'Lançamento' }, { k: 'finance', l: 'Financeiro' }, { k: 'launched', l: 'Lançados' }, { k: 'logs', l: 'Logs' }];
+  // Abas mapeadas corretamente para o Master
+  const modules = [{ k: 'entry', l: 'Lançamento' }, { k: 'finance', l: 'Contas a Pagar' }, { k: 'launched', l: 'Itens Lançados' }, { k: 'logs', l: 'Logs' }];
   return ( <div className="max-w-4xl mx-auto"><h2 className="text-3xl font-black mb-10 tracking-tight uppercase text-lg">Gerenciar Usuários</h2><div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8"><div className="flex gap-4"><input type="email" placeholder="nome@empresa.com" className="flex-1 border border-slate-200 bg-slate-50 rounded-xl px-4 py-3" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} /><button onClick={addUser} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs">Autorizar</button></div></div><div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">E-mail</th>{modules.map(m => <th key={m.k} className="p-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">{m.l}</th>)}</tr></thead><tbody>{usersList.map(u => (<tr key={u.email} className="hover:bg-slate-50"><td className="p-5 font-bold text-slate-700">{u.email}</td>{modules.map(m => (<td key={m.k} className="p-5 text-center"><input type="checkbox" className="w-5 h-5 rounded text-blue-600" checked={u.modules?.includes(m.k)} onChange={(e) => handleUpdate(u.email, m.k, e.target.checked)} /></td>))}</tr>))}</tbody></table></div></div> );
 };
 
@@ -620,9 +621,12 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview }) 
       'PAGO': { label: 'Liquidados', prev: 'APROVADO' } // Sem próximo passo
   };
   
-  const openFile = (files) => {
-      if(files && files.length > 0) alert(`Abrindo arquivo: ${files[0].name}`); // Em produção abriria URL
-      else alert("Arquivo não disponível");
+  const openFile = (files, title) => {
+      if (files && files.length > 0) {
+          onPreview(files, title);
+      } else {
+          alert("Nenhum arquivo anexado.");
+      }
   };
   
   return ( 
@@ -665,8 +669,8 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview }) 
                                 </td>
                                 <td className="p-5 text-center w-1/4">
                                     <div className="flex gap-2 justify-center">
-                                        <button onClick={() => openFile(it.anexosNF)} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors"><ExternalLink size={10}/> Nota</button>
-                                        <button onClick={() => openFile(it.anexosBoleto)} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-slate-50 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors"><ExternalLink size={10}/> Boleto</button>
+                                        <button onClick={() => openFile(it.anexosNF, "Nota Fiscal")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors"><ExternalLink size={10}/> Nota</button>
+                                        <button onClick={() => openFile(it.anexosBoleto, "Boleto")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-slate-50 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors"><ExternalLink size={10}/> Boleto</button>
                                     </div>
                                 </td>
                                 <td className="p-5 text-center w-1/4">
