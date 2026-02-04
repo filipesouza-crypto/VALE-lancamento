@@ -470,6 +470,73 @@ const Dashboard = ({ user, onNoAccess }) => {
 };
 
 // --- COMPONENTES AUXILIARES ---
+const FilterBar = ({ search, onSearchChange, sortBy, onSortChange, filterStatus, onFilterChange, showStatusFilter = false }) => {
+  const sortOptions = [
+    { value: 'vencimento-asc', label: 'Vencimento (Mais Antigo)' },
+    { value: 'vencimento-desc', label: 'Vencimento (Mais Recente)' },
+    { value: 'valor-asc', label: 'Valor (Menor)' },
+    { value: 'valor-desc', label: 'Valor (Maior)' },
+    { value: 'servico-asc', label: 'Serviço (A-Z)' },
+    { value: 'servico-desc', label: 'Serviço (Z-A)' }
+  ];
+
+  const statusOptions = [
+    { value: 'all', label: 'Todos os Status' },
+    { value: 'PENDENTE', label: 'Pendente' },
+    { value: 'PROVISIONADO', label: 'Provisionado' },
+    { value: 'APROVADO', label: 'Aprovado' },
+    { value: 'PAGO', label: 'Pago' }
+  ];
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 shadow-sm">
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* Campo de Pesquisa */}
+        <div className="flex-1 flex items-center gap-2 bg-slate-50 rounded-lg px-4 py-2 border border-slate-200">
+          <Search className="text-slate-400" size={18}/>
+          <input 
+            type="text" 
+            placeholder="Pesquisar por serviço, fornecedor, FDA..." 
+            className="flex-1 bg-transparent outline-none text-sm font-medium text-slate-700" 
+            value={search} 
+            onChange={e => onSearchChange(e.target.value)} 
+          />
+        </div>
+
+        {/* Ordenação */}
+        <div className="flex items-center gap-2">
+          <ArrowUpDown className="text-slate-400" size={18}/>
+          <select 
+            value={sortBy} 
+            onChange={e => onSortChange(e.target.value)}
+            className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 transition-colors outline-none cursor-pointer"
+          >
+            {sortOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro de Status (opcional) */}
+        {showStatusFilter && (
+          <div className="flex items-center gap-2">
+            <Filter className="text-slate-400" size={18}/>
+            <select 
+              value={filterStatus} 
+              onChange={e => onFilterChange(e.target.value)}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 transition-colors outline-none cursor-pointer"
+            >
+              {statusOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const NavButton = ({ active, onClick, icon, label }) => ( <button onClick={onClick} className={`w-full flex items-center gap-3 px-6 py-4 rounded-xl transition-all font-bold text-sm tracking-tight ${active ? 'bg-blue-600 text-white shadow-xl translate-x-1' : 'text-slate-400 hover:text-slate-800 hover:bg-slate-100'}`}>{icon}<span>{label}</span></button> );
 const StatusBadge = ({ status }) => { 
   const styles = { 'PENDENTE': 'bg-red-100 text-red-600', 'PROVISIONADO': 'bg-yellow-100 text-yellow-700', 'APROVADO': 'bg-blue-100 text-blue-700', 'PAGO': 'bg-green-100 text-green-700' }; 
@@ -537,33 +604,159 @@ const FileUploadButton = ({ label, icon, onUpload, color, isUploading = false })
 
 const LogsModule = ({ logs }) => {
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('data-desc');
+  const [filterAction, setFilterAction] = useState('all');
+  
+  // Extrair ações únicas para o filtro
+  const uniqueActions = useMemo(() => {
+    const actions = [...new Set(logs.map(log => log.action))];
+    return ['all', ...actions.sort()];
+  }, [logs]);
+
+  // Função de ordenação
+  const applySorting = (items) => {
+    const sorted = [...items];
+    switch(sortBy) {
+      case 'data-asc':
+        return sorted.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      case 'data-desc':
+        return sorted.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      case 'usuario-asc':
+        return sorted.sort((a, b) => a.user.localeCompare(b.user));
+      case 'usuario-desc':
+        return sorted.sort((a, b) => b.user.localeCompare(a.user));
+      case 'acao-asc':
+        return sorted.sort((a, b) => a.action.localeCompare(b.action));
+      case 'acao-desc':
+        return sorted.sort((a, b) => b.action.localeCompare(a.action));
+      default:
+        return sorted;
+    }
+  };
   
   // Filtragem de Logs
   const filteredLogs = useMemo(() => {
-    if (!search) return logs;
-    const s = search.toLowerCase();
-    return logs.filter(log => 
-      log.user.toLowerCase().includes(s) ||
-      log.action.toLowerCase().includes(s) ||
-      log.details.toLowerCase().includes(s)
-    );
-  }, [logs, search]);
+    let filtered = logs;
+    
+    // Filtro por texto
+    if (search) {
+      const s = search.toLowerCase();
+      filtered = filtered.filter(log => 
+        log.user.toLowerCase().includes(s) ||
+        log.action.toLowerCase().includes(s) ||
+        log.details.toLowerCase().includes(s)
+      );
+    }
+    
+    // Filtro por ação
+    if (filterAction !== 'all') {
+      filtered = filtered.filter(log => log.action === filterAction);
+    }
+    
+    // Aplicar ordenação
+    return applySorting(filtered);
+  }, [logs, search, sortBy, filterAction]);
 
   return (
     <div className="max-w-7xl mx-auto">
-      <header className="mb-8 flex justify-between items-center">
-        <div><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Logs do Sistema</h2><p className="text-slate-500 font-medium">Auditoria de ações dos usuários</p></div>
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200">
-            <Search className="text-slate-400 ml-3" size={18}/>
-            <input type="text" placeholder="Pesquisar nos logs..." className="py-2 px-3 outline-none w-64 text-sm font-medium" value={search} onChange={e => setSearch(e.target.value)} />
+      <header className="mb-8">
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg mb-2">Logs do Sistema</h2>
+        <p className="text-slate-500 font-medium mb-6">Auditoria de ações dos usuários</p>
+        
+        {/* Barra de Filtros Customizada para Logs */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex flex-col md:flex-row gap-4">
+            {/* Campo de Pesquisa */}
+            <div className="flex-1 flex items-center gap-2 bg-slate-50 rounded-lg px-4 py-2 border border-slate-200">
+              <Search className="text-slate-400" size={18}/>
+              <input 
+                type="text" 
+                placeholder="Pesquisar usuário, ação ou detalhes..." 
+                className="flex-1 bg-transparent outline-none text-sm font-medium text-slate-700" 
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+              />
+            </div>
+
+            {/* Filtro por Ação */}
+            <div className="flex items-center gap-2">
+              <Filter className="text-slate-400" size={18}/>
+              <select 
+                value={filterAction} 
+                onChange={e => setFilterAction(e.target.value)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 transition-colors outline-none cursor-pointer"
+              >
+                <option value="all">Todas as Ações</option>
+                {uniqueActions.filter(a => a !== 'all').map(action => (
+                  <option key={action} value={action}>{action}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ordenação */}
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="text-slate-400" size={18}/>
+              <select 
+                value={sortBy} 
+                onChange={e => setSortBy(e.target.value)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 transition-colors outline-none cursor-pointer"
+              >
+                <option value="data-desc">Data (Mais Recente)</option>
+                <option value="data-asc">Data (Mais Antigo)</option>
+                <option value="usuario-asc">Usuário (A-Z)</option>
+                <option value="usuario-desc">Usuário (Z-A)</option>
+                <option value="acao-asc">Ação (A-Z)</option>
+                <option value="acao-desc">Ação (Z-A)</option>
+              </select>
+            </div>
+          </div>
         </div>
       </header>
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 border-b"><tr><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Data/Hora</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Usuário</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Ação</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Detalhes</th></tr></thead>
-          <tbody className="divide-y divide-slate-50">{filteredLogs.map(log => (<tr key={log.id} className="hover:bg-slate-50"><td className="p-5 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td><td className="p-5 font-bold text-slate-700">{log.user}</td><td className="p-5 font-black text-[10px] uppercase bg-slate-100 rounded inline-block m-2 text-slate-600">{log.action}</td><td className="p-5 text-slate-600">{log.details}</td></tr>))}</tbody>
+          <thead className="bg-slate-50 border-b">
+            <tr>
+              <th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400 cursor-pointer hover:text-blue-600" onClick={() => setSortBy(sortBy === 'data-asc' ? 'data-desc' : 'data-asc')}>
+                Data/Hora {sortBy.includes('data') && (sortBy.includes('asc') ? '↑' : '↓')}
+              </th>
+              <th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400 cursor-pointer hover:text-blue-600" onClick={() => setSortBy(sortBy === 'usuario-asc' ? 'usuario-desc' : 'usuario-asc')}>
+                Usuário {sortBy.includes('usuario') && (sortBy.includes('asc') ? '↑' : '↓')}
+              </th>
+              <th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400 cursor-pointer hover:text-blue-600" onClick={() => setSortBy(sortBy === 'acao-asc' ? 'acao-desc' : 'acao-asc')}>
+                Ação {sortBy.includes('acao') && (sortBy.includes('asc') ? '↑' : '↓')}
+              </th>
+              <th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Detalhes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {filteredLogs.length === 0 ? (
+              <tr>
+                <td colSpan="4" className="p-10 text-center text-slate-400 italic">
+                  {search || filterAction !== 'all' ? 'Nenhum registro encontrado com os filtros aplicados.' : 'Nenhum registro encontrado.'}
+                </td>
+              </tr>
+            ) : (
+              filteredLogs.map(log => (
+                <tr key={log.id} className="hover:bg-slate-50">
+                  <td className="p-5 font-mono text-xs text-slate-600">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+                  <td className="p-5 font-bold text-slate-700">{log.user}</td>
+                  <td className="p-5">
+                    <span className="font-black text-[10px] uppercase bg-slate-100 rounded px-2 py-1 text-slate-600">
+                      {log.action}
+                    </span>
+                  </td>
+                  <td className="p-5 text-slate-600 text-sm">{log.details}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
         </table>
-        {filteredLogs.length === 0 && <div className="p-10 text-center text-slate-400 italic">Nenhum registro encontrado.</div>}
+      </div>
+
+      {/* Contador de Resultados */}
+      <div className="mt-4 text-center text-sm text-slate-500 font-medium">
+        Exibindo {filteredLogs.length} de {logs.length} registros
       </div>
     </div>
   );
@@ -731,7 +924,8 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
       try {
         if (editTarget) {
           // Atualiza o item existente (não cria duplicado)
-          await updateItem(editTarget.id, formData, anexosNF, anexosBoleto);
+          // CORREÇÃO: updateItem espera (id, data, filesNF, filesBoleto)
+          await updateItem(editTarget.id, formData, anexosNF.length > 0 ? anexosNF : null, anexosBoleto.length > 0 ? anexosBoleto : null);
           clearEditTarget();
         } else {
           // Cria novo item
@@ -920,8 +1114,10 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
 };
 
 const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions }) => {
-  const [f, setF] = useState('');
+  const [search, setSearch] = useState('');
   const [tab, setTab] = useState('abertos'); 
+  const [sortBy, setSortBy] = useState('vencimento-asc');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [eO, setEO] = useState(false);
   const exportRef = useRef(null);
 
@@ -936,22 +1132,58 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
 
   useEffect(() => { const h = (e) => { if (exportRef.current && !exportRef.current.contains(e.target)) setEO(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
 
-  const filtered = useMemo(() => allItems.filter(i => {
-      const matchText = (i.data.servicos||'').toLowerCase().includes(f.toLowerCase()) || (i.fdaNumber||'').toLowerCase().includes(f.toLowerCase());
+  // Função de ordenação
+  const applySorting = (items) => {
+    const sorted = [...items];
+    switch(sortBy) {
+      case 'vencimento-asc':
+        return sorted.sort((a, b) => new Date(a.data.vencimento) - new Date(b.data.vencimento));
+      case 'vencimento-desc':
+        return sorted.sort((a, b) => new Date(b.data.vencimento) - new Date(a.data.vencimento));
+      case 'valor-asc':
+        return sorted.sort((a, b) => parseFloat(a.data.total) - parseFloat(b.data.total));
+      case 'valor-desc':
+        return sorted.sort((a, b) => parseFloat(b.data.total) - parseFloat(a.data.total));
+      case 'servico-asc':
+        return sorted.sort((a, b) => (a.data.servicos || '').localeCompare(b.data.servicos || ''));
+      case 'servico-desc':
+        return sorted.sort((a, b) => (b.data.servicos || '').localeCompare(a.data.servicos || ''));
+      default:
+        return sorted;
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let items = allItems.filter(i => {
+      const matchText = (
+        (i.data.servicos||'').toLowerCase().includes(search.toLowerCase()) || 
+        (i.fdaNumber||'').toLowerCase().includes(search.toLowerCase()) ||
+        (i.data.clienteFornecedor||'').toLowerCase().includes(search.toLowerCase())
+      );
       const matchTab = tab === 'abertos' ? i.data.status !== 'PAGO' : i.data.status === 'PAGO';
-      return matchText && matchTab;
-  }).sort((a, b) => new Date(b.data.vencimento) - new Date(a.data.vencimento)), [allItems, f, tab]);
+      const matchStatus = filterStatus === 'all' ? true : i.data.status === filterStatus;
+      return matchText && matchTab && matchStatus;
+    });
+    return applySorting(items);
+  }, [allItems, search, tab, sortBy, filterStatus]);
 
   if (!canViewOpen && !canViewPaid) return <div className="text-center py-20 text-slate-400">Acesso restrito a este módulo.</div>;
 
   return ( 
     <div className="max-w-7xl mx-auto">
-      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
-        <div><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Itens Lançados</h2></div>
-        <div className="flex items-center gap-3 w-full md:w-auto bg-white p-1 rounded-xl border border-slate-200">
-            <Search className="text-slate-400 ml-3" size={18}/>
-            <input type="text" placeholder="Pesquisa global..." className="py-2 outline-none w-64 text-sm font-medium" value={f} onChange={e => setF(e.target.value)} />
-        </div>
+      <header className="mb-8">
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg mb-6">Itens Lançados</h2>
+        
+        {/* Barra de Filtros */}
+        <FilterBar 
+          search={search}
+          onSearchChange={setSearch}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          filterStatus={filterStatus}
+          onFilterChange={setFilterStatus}
+          showStatusFilter={tab === 'abertos'}
+        />
       </header>
 
       <div className="flex gap-4 mb-6">
@@ -963,33 +1195,51 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 border-b">
             <tr>
-              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vencimento</th>
-              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviço / FDA</th>
-              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-blue-600" onClick={() => setSortBy(sortBy === 'vencimento-asc' ? 'vencimento-desc' : 'vencimento-asc')}>
+                Vencimento {sortBy.includes('vencimento') && (sortBy.includes('asc') ? '↑' : '↓')}
+              </th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-blue-600" onClick={() => setSortBy(sortBy === 'servico-asc' ? 'servico-desc' : 'servico-asc')}>
+                Serviço / FDA {sortBy.includes('servico') && (sortBy.includes('asc') ? '↑' : '↓')}
+              </th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:text-blue-600" onClick={() => setSortBy(sortBy === 'valor-asc' ? 'valor-desc' : 'valor-asc')}>
+                Valor {sortBy.includes('valor') && (sortBy.includes('asc') ? '↑' : '↓')}
+              </th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50 font-medium">
-            {filtered.map(i => (
-              <tr key={i.id} className="hover:bg-slate-50">
-                <td className="p-5 font-bold text-slate-800">{i.data.vencimento}</td>
-                <td className="p-5">
-                  <div className="font-black text-slate-800 uppercase text-xs">{i.data.servicos}</div>
-                  <div className="text-[10px] text-blue-600 font-black mt-1">{i.fdaNumber}</div>
-                </td>
-                <td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(i.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                <td className="p-5 text-center"><StatusBadge status={i.data.status} /></td>
-                <td className="p-5 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <button onClick={() => onEdit(i)} className="p-2 text-slate-400 hover:text-blue-600"><Edit size={18}/></button>
-                    <button onClick={() => onDelete(i.id)} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button>
-                  </div>
-                </td>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan="5" className="p-10 text-center text-slate-400 italic">Nenhum item encontrado com os filtros aplicados.</td>
               </tr>
-            ))}
+            ) : (
+              filtered.map(i => (
+                <tr key={i.id} className="hover:bg-slate-50">
+                  <td className="p-5 font-bold text-slate-800">{new Date(i.data.vencimento).toLocaleDateString('pt-BR')}</td>
+                  <td className="p-5">
+                    <div className="font-black text-slate-800 uppercase text-xs">{i.data.servicos}</div>
+                    <div className="text-[10px] text-blue-600 font-black mt-1">{i.fdaNumber}</div>
+                    <div className="text-[10px] text-slate-400 font-medium mt-1">{i.data.clienteFornecedor}</div>
+                  </td>
+                  <td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(i.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                  <td className="p-5 text-center"><StatusBadge status={i.data.status} /></td>
+                  <td className="p-5 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <button onClick={() => onEdit(i)} className="p-2 text-slate-400 hover:text-blue-600" title="Editar"><Edit size={18}/></button>
+                      <button onClick={() => onDelete(i.id)} className="p-2 text-slate-400 hover:text-red-600" title="Excluir"><Trash2 size={18}/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
+      </div>
+      
+      {/* Contador de Resultados */}
+      <div className="mt-4 text-center text-sm text-slate-500 font-medium">
+        Exibindo {filtered.length} de {allItems.filter(i => tab === 'abertos' ? i.data.status !== 'PAGO' : i.data.status === 'PAGO').length} itens
       </div>
     </div> 
   );
@@ -998,6 +1248,7 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
 const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, userPermissions }) => {
   const [aT, setAT] = useState('PENDENTE'); 
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('vencimento-asc');
 
   // Definição das Abas com Permissões
   const steps = useMemo(() => {
@@ -1020,13 +1271,38 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
     }
   }, [steps]);
 
+  // Função de ordenação
+  const applySorting = (items) => {
+    const sorted = [...items];
+    switch(sortBy) {
+      case 'vencimento-asc':
+        return sorted.sort((a, b) => new Date(a.data.vencimento) - new Date(b.data.vencimento));
+      case 'vencimento-desc':
+        return sorted.sort((a, b) => new Date(b.data.vencimento) - new Date(a.data.vencimento));
+      case 'valor-asc':
+        return sorted.sort((a, b) => parseFloat(a.data.total) - parseFloat(b.data.total));
+      case 'valor-desc':
+        return sorted.sort((a, b) => parseFloat(b.data.total) - parseFloat(a.data.total));
+      case 'servico-asc':
+        return sorted.sort((a, b) => (a.data.servicos || '').localeCompare(b.data.servicos || ''));
+      case 'servico-desc':
+        return sorted.sort((a, b) => (b.data.servicos || '').localeCompare(a.data.servicos || ''));
+      default:
+        return sorted;
+    }
+  };
+
   const groupedItems = useMemo(() => {
     if (!Object.keys(steps).includes(aT)) return [];
     
     let filtered = allItems.filter(i => i.data.status === aT && (
         i.data.servicos.toLowerCase().includes(search.toLowerCase()) ||
-        i.data.clienteFornecedor.toLowerCase().includes(search.toLowerCase())
+        i.data.clienteFornecedor.toLowerCase().includes(search.toLowerCase()) ||
+        (i.data.navio || '').toLowerCase().includes(search.toLowerCase())
     ));
+
+    // Aplica ordenação
+    filtered = applySorting(filtered);
 
     const groups = {};
     filtered.forEach(item => {
@@ -1037,9 +1313,10 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
 
     return Object.keys(groups).sort().map(date => ({
         date,
-        items: groups[date]
+        items: groups[date],
+        total: groups[date].reduce((sum, item) => sum + parseFloat(item.data.total || 0), 0)
     }));
-  }, [allItems, aT, search, steps]);
+  }, [allItems, aT, search, steps, sortBy]);
   
   const handleStatus = async (id, cur, s) => { 
     const n = new Date().toISOString().split('T')[0]; 
@@ -1057,17 +1334,31 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
           alert("Nenhum arquivo anexado.");
       }
   };
+
+  // Calcular total geral da aba
+  const totalGeral = useMemo(() => {
+    return groupedItems.reduce((sum, group) => sum + group.total, 0);
+  }, [groupedItems]);
+
+  const totalItens = useMemo(() => {
+    return groupedItems.reduce((sum, group) => sum + group.items.length, 0);
+  }, [groupedItems]);
   
   if (Object.keys(steps).length === 0) return <div className="text-center py-20 text-slate-400">Acesso restrito a este módulo.</div>;
 
   return ( 
     <div className="max-w-7xl mx-auto">
-      <header className="mb-8 flex justify-between items-center">
-          <div><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Contas a Pagar</h2></div>
-          <div className="flex bg-white p-1 rounded-xl border border-slate-200">
-              <Search className="text-slate-400 ml-3" size={18}/>
-              <input type="text" placeholder="Pesquisar contas..." className="py-2 px-3 outline-none w-64 text-sm font-medium" value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
+      <header className="mb-8">
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg mb-6">Contas a Pagar</h2>
+        
+        {/* Barra de Filtros */}
+        <FilterBar 
+          search={search}
+          onSearchChange={setSearch}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          showStatusFilter={false}
+        />
       </header>
 
       <div className="flex gap-2 border-b mb-8 overflow-x-auto">
@@ -1078,12 +1369,41 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
         ))}
       </div>
 
+      {/* Resumo da Aba */}
+      {totalItens > 0 && (
+        <div className="bg-gradient-to-r from-blue-50 to-slate-50 rounded-xl p-6 mb-6 border border-blue-100">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total na Aba</p>
+              <p className="text-2xl font-black text-slate-800">R$ {totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Quantidade</p>
+              <p className="text-2xl font-black text-slate-800">{totalItens} {totalItens === 1 ? 'item' : 'itens'}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-8">
-        {groupedItems.length === 0 ? <div className="text-center py-20 text-slate-300 italic font-medium">Nenhum item nesta etapa.</div> : groupedItems.map(group => (
+        {groupedItems.length === 0 ? (
+          <div className="text-center py-20 text-slate-300 italic font-medium">
+            {search ? 'Nenhum item encontrado com os filtros aplicados.' : 'Nenhum item nesta etapa.'}
+          </div>
+        ) : (
+          groupedItems.map(group => (
             <div key={group.date} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="bg-slate-50 p-4 border-b flex items-center gap-3">
-                    <Calendar size={16} className="text-slate-400"/>
-                    <span className="font-black text-slate-700 text-xs uppercase tracking-widest">Vencimento: {new Date(group.date).toLocaleDateString('pt-BR')}</span>
+                <div className="bg-slate-50 p-4 border-b flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Calendar size={16} className="text-slate-400"/>
+                      <span className="font-black text-slate-700 text-xs uppercase tracking-widest">
+                        Vencimento: {new Date(group.date).toLocaleDateString('pt-BR')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs font-bold text-slate-500">{group.items.length} {group.items.length === 1 ? 'item' : 'itens'}</span>
+                      <span className="text-sm font-black text-slate-700">R$ {group.total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                    </div>
                 </div>
                 <table className="w-full text-sm text-left">
                     <tbody className="divide-y divide-slate-50">
@@ -1092,6 +1412,7 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
                                 <td className="p-5 w-1/3">
                                     <div className="font-black text-slate-800 uppercase text-xs">{it.data.servicos}</div>
                                     <div className="text-[10px] text-slate-400 font-bold mt-1">{it.data.clienteFornecedor}</div>
+                                    {it.data.navio && <div className="text-[10px] text-blue-600 font-bold mt-1">🚢 {it.data.navio}</div>}
                                 </td>
                                 <td className="p-5 text-right font-black text-slate-900 w-1/6">
                                     R$ {parseFloat(it.data.total).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
@@ -1119,7 +1440,8 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
                     </tbody>
                 </table>
             </div>
-        ))}
+        ))
+        )}
       </div>
     </div> 
   );
