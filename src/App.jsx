@@ -24,7 +24,7 @@ import {
   FolderOpen, DollarSign, Eye, Edit, Search, 
   ArrowUpDown, Lock, LogOut, UserCog, History, ExternalLink,
   Download, FileSpreadsheet, File as FileIcon, FileType,
-  Undo2, Filter, Calendar, Settings
+  Undo2, Filter, Calendar
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO FIREBASE ---
@@ -170,7 +170,6 @@ const Dashboard = ({ user, onNoAccess }) => {
 
     const fetchPermissions = () => {
       if (isMaster) {
-        // Master tem acesso a tudo (módulos e todas as abas)
         setUserPermissions(['entry', 'launched', 'finance', 'users', 'logs', 'all_tabs']);
         setLoadingPermissions(false);
         return;
@@ -194,7 +193,7 @@ const Dashboard = ({ user, onNoAccess }) => {
     const unsubPerms = fetchPermissions();
     const unsubFdas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'fdas'), (snapshot) => setFdas(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubItems = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'items'), (snapshot) => setRawItems(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubLogs = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), limit(100)), (snapshot) => {
+    const unsubLogs = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), limit(500)), (snapshot) => {
         setLogsList(snapshot.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)));
     });
 
@@ -250,16 +249,14 @@ const Dashboard = ({ user, onNoAccess }) => {
     setCurrentModule('entry');
   };
 
-  // Função mock para "Baixar" o arquivo (Como não temos storage real, criamos um blob com texto)
-  const handleDownloadMock = (file) => {
-    const text = `Arquivo Simulado: ${file.name}\nData: ${file.date}\nEste sistema é uma demonstração. Em produção, este arquivo seria baixado do Firebase Storage.`;
+  // Função para abrir o arquivo no navegador (Simulação de URL com Blob)
+  const handleViewFile = (file) => {
+    const text = `VISUALIZAÇÃO DE ARQUIVO\n\nNome: ${file.name}\nData de Upload: ${file.date}\n\nEste é um visualizador simulado. Em produção, este arquivo seria carregado do Firebase Storage.`;
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${file.name}.txt`; // Força extensão txt para demonstração
-    link.click();
-    logAction(userEmail, 'BAIXAR ANEXO', `Arquivo baixado: ${file.name}`);
+    // Abre em uma nova aba para visualização
+    window.open(url, '_blank');
+    logAction(userEmail, 'VISUALIZAR ANEXO', `Arquivo visualizado: ${file.name}`);
   };
 
   if (loadingPermissions) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-bold text-slate-400">AUTENTICANDO...</div>;
@@ -300,9 +297,9 @@ const Dashboard = ({ user, onNoAccess }) => {
                         <p className="font-bold text-slate-700 truncate">{file.name}</p>
                         <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{file.date}</p>
                       </div>
-                      {/* Botão de Download agora funcional */}
-                      <button onClick={() => handleDownloadMock(file)} className="px-4 py-2 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg transition-all flex items-center gap-2">
-                        <Download size={14}/> Baixar
+                      {/* Botão de Visualizar no Modal */}
+                      <button onClick={() => handleViewFile(file)} className="px-4 py-2 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg transition-all flex items-center gap-2">
+                        <Eye size={14}/> Visualizar
                       </button>
                     </li> 
                   ))} 
@@ -329,17 +326,39 @@ const FileUploadButton = ({ label, icon, onUpload, color }) => { const inputId =
 
 // --- MÓDULOS ---
 
-const LogsModule = ({ logs }) => (
-  <div className="max-w-7xl mx-auto">
-    <header className="mb-10"><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Logs do Sistema</h2><p className="text-slate-500 font-medium">Auditoria de ações dos usuários</p></header>
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-slate-50 border-b"><tr><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Data/Hora</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Usuário</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Ação</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Detalhes</th></tr></thead>
-        <tbody className="divide-y divide-slate-50">{logs.map(log => (<tr key={log.id} className="hover:bg-slate-50"><td className="p-5 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td><td className="p-5 font-bold text-slate-700">{log.user}</td><td className="p-5 font-black text-[10px] uppercase bg-slate-100 rounded inline-block m-2 text-slate-600">{log.action}</td><td className="p-5 text-slate-600">{log.details}</td></tr>))}</tbody>
-      </table>
+const LogsModule = ({ logs }) => {
+  const [search, setSearch] = useState('');
+  
+  // Filtragem de Logs
+  const filteredLogs = useMemo(() => {
+    if (!search) return logs;
+    const s = search.toLowerCase();
+    return logs.filter(log => 
+      log.user.toLowerCase().includes(s) ||
+      log.action.toLowerCase().includes(s) ||
+      log.details.toLowerCase().includes(s)
+    );
+  }, [logs, search]);
+
+  return (
+    <div className="max-w-7xl mx-auto">
+      <header className="mb-8 flex justify-between items-center">
+        <div><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Logs do Sistema</h2><p className="text-slate-500 font-medium">Auditoria de ações dos usuários</p></div>
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200">
+            <Search className="text-slate-400 ml-3" size={18}/>
+            <input type="text" placeholder="Pesquisar nos logs..." className="py-2 px-3 outline-none w-64 text-sm font-medium" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </header>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 border-b"><tr><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Data/Hora</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Usuário</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Ação</th><th className="p-5 font-black uppercase text-[10px] tracking-widest text-slate-400">Detalhes</th></tr></thead>
+          <tbody className="divide-y divide-slate-50">{filteredLogs.map(log => (<tr key={log.id} className="hover:bg-slate-50"><td className="p-5 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td><td className="p-5 font-bold text-slate-700">{log.user}</td><td className="p-5 font-black text-[10px] uppercase bg-slate-100 rounded inline-block m-2 text-slate-600">{log.action}</td><td className="p-5 text-slate-600">{log.details}</td></tr>))}</tbody>
+        </table>
+        {filteredLogs.length === 0 && <div className="p-10 text-center text-slate-400 italic">Nenhum registro encontrado.</div>}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const UserManagementModule = ({ usersList }) => {
   const [newUserEmail, setNewUserEmail] = useState('');
