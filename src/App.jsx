@@ -17,7 +17,8 @@ import {
   setDoc,
   query,
   limit,
-  writeBatch
+  writeBatch,
+  getDocs
 } from "firebase/firestore";
 
 import {
@@ -211,7 +212,7 @@ const LoginScreen = ({ errorFromApp }) => {
           <div className="bg-blue-600 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <Receipt className="text-white" size={40} />
           </div>
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight">LMA Finanças</h1>
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight">LMA - VALE</h1>
           <p className="text-slate-400 text-sm mt-2 font-medium">Controle de Notas Fiscais</p>
         </div>
 
@@ -307,6 +308,26 @@ const Dashboard = ({ user, onNoAccess }) => {
   };
   const toggleFda = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { isOpen: !status });
   const updateFdaNumber = async (id, val) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { number: val.toUpperCase() });
+
+  const deleteFda = async (fdaId, fdaNumber) => {
+    // Verificar se a FDA tem itens
+    const fdaItems = rawItems.filter(item => item.fdaId === fdaId);
+
+    if (fdaItems.length > 0) {
+      alert('Este atendimento possui lançamentos e não pode ser excluído. Exclua os lançamentos primeiro.');
+      return;
+    }
+
+    if (!window.confirm(`Tem certeza que deseja excluir o atendimento ${fdaNumber}?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', fdaId));
+      logAction(userEmail, 'EXCLUIR FDA', `FDA excluída: ${fdaNumber}`);
+    } catch (error) {
+      console.error("Erro ao excluir FDA:", error);
+      alert("Erro ao excluir atendimento.");
+    }
+  };
 
   const saveItem = async (fdaId, itemData, filesNF, filesBoleto) => {
     try {
@@ -488,6 +509,51 @@ const Dashboard = ({ user, onNoAccess }) => {
     } catch (e) {
       console.error("Erro ao abrir arquivo", e);
       alert("Erro ao tentar visualizar o arquivo.");
+    }
+  };
+
+  // Função para fazer download do arquivo
+  const handleDownloadFile = async (file) => {
+    try {
+      let base64Url = file.url;
+
+      // Se for arquivo em chunks, precisa reconstruir
+      if (file.fileId) {
+        const rebuiltBase64 = await getFileFromChunks(file.fileId);
+        if (rebuiltBase64) {
+          base64Url = rebuiltBase64;
+        } else {
+          alert('Erro: Arquivo não encontrado no servidor ou corrompido.');
+          return;
+        }
+      }
+
+      if (base64Url) {
+        // Criar link de download
+        const link = document.createElement('a');
+        link.href = base64Url;
+        link.download = file.name || 'arquivo';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        logAction(userEmail, 'DOWNLOAD ANEXO', `Arquivo baixado: ${file.name}`);
+      } else if (file.file) {
+        // Se for um arquivo local novo (File object)
+        const blobUrl = URL.createObjectURL(file.file);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = file.name || file.file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        logAction(userEmail, 'DOWNLOAD ANEXO', `Arquivo baixado: ${file.name}`);
+      } else {
+        alert('Arquivo não disponível para download.');
+      }
+    } catch (e) {
+      console.error("Erro ao baixar arquivo", e);
+      alert("Erro ao tentar baixar o arquivo.");
     }
   };
 
@@ -1099,9 +1165,12 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
           <div className="bg-slate-50 p-6 flex justify-between items-center cursor-pointer" onClick={() => toggleFda(f.id, f.isOpen)}>
             <div className="flex items-center gap-5">
               <div className={`p-2 rounded-lg ${f.isOpen ? 'bg-blue-100 text-blue-600' : 'bg-slate-200'}`}>{f.isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}</div>
-              <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ref. Lote</label><input type="text" value={f.number} onClick={e => e.stopPropagation()} onChange={e => updateFdaNumber(f.id, e.target.value)} className="bg-transparent font-mono text-xl font-black text-blue-600 focus:outline-none w-full uppercase" /></div>
+              <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Numero de Atendimento</label><input type="text" value={f.number} onClick={e => e.stopPropagation()} onChange={e => updateFdaNumber(f.id, e.target.value)} className="bg-transparent font-mono text-xl font-black text-blue-600 focus:outline-none w-full uppercase" /></div>
             </div>
-            <button onClick={e => { e.stopPropagation(); setActiveFdaId(activeFdaId === f.id ? null : f.id); }} className="bg-white border-2 border-blue-600 text-blue-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest">{activeFdaId === f.id ? 'Fechar' : 'Novo Lançamento'}</button>
+            <div className="flex items-center gap-3">
+              <button onClick={e => { e.stopPropagation(); deleteFda(f.id, f.number); }} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir atendimento vazio"><Trash2 size={18} /></button>
+              <button onClick={e => { e.stopPropagation(); setActiveFdaId(activeFdaId === f.id ? null : f.id); }} className="bg-white border-2 border-blue-600 text-blue-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest">{activeFdaId === f.id ? 'Fechar' : 'Novo Lançamento'}</button>
+            </div>
           </div>
 
           {activeFdaId === f.id && (
