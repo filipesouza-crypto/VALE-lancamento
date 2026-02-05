@@ -38,7 +38,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyAjnXQyLpPr9N959RJu-m33eJQiTVI6wA4",
   authDomain: "controle-de-notas-8d0ba.firebaseapp.com",
   projectId: "controle-de-notas-8d0ba",
-  storageBucket: "controle-de-notas-8d0ba.firebasestorage.app",
+  storageBucket: "controle-de-notas-8d0ba.appspot.com",
   messagingSenderId: "832409792798",
   appId: "1:832409792798:web:3ae6f15a0bbbb07870d90f"
 };
@@ -263,32 +263,28 @@ const Dashboard = ({ user, onNoAccess }) => {
   
   const saveItem = async (fdaId, itemData, filesNF, filesBoleto) => {
       try {
-        // Função auxiliar para upload com conversão adequada para Blob
-        const uploadFileWithBlob = async (file, basePath, fdaId) => {
+        // Upload paralelo de arquivos para melhor performance
+        const uploadNFPromises = filesNF.map(async (file) => {
           if (file.file) {
-            // Converter File para Blob adequadamente (crítico para PDFs)
-            const blob = new Blob([file.file], { type: file.file.type || 'application/octet-stream' });
             const fileName = `${fdaId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
-            const storageRef = ref(storage, `${basePath}/${fileName}`);
-            
-            // Metadados para garantir tipo correto
-            const metadata = {
-              contentType: file.file.type || 'application/octet-stream',
-              customMetadata: {
-                originalName: file.file.name
-              }
-            };
-            
-            await uploadBytes(storageRef, blob, metadata);
+            const storageRef = ref(storage, `anexosNF/${fileName}`);
+            await uploadBytes(storageRef, file.file);
             const downloadUrl = await getDownloadURL(storageRef);
             return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
           }
           return file;
-        };
+        });
 
-        // Upload paralelo de arquivos para melhor performance
-        const uploadNFPromises = filesNF.map(file => uploadFileWithBlob(file, 'anexosNF', fdaId));
-        const uploadBoletoPromises = filesBoleto.map(file => uploadFileWithBlob(file, 'anexosBoleto', fdaId));
+        const uploadBoletoPromises = filesBoleto.map(async (file) => {
+          if (file.file) {
+            const fileName = `${fdaId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
+            const storageRef = ref(storage, `anexosBoleto/${fileName}`);
+            await uploadBytes(storageRef, file.file);
+            const downloadUrl = await getDownloadURL(storageRef);
+            return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
+          }
+          return file;
+        });
 
         // Aguarda todos os uploads em paralelo
         const [nfUrls, boletoUrls] = await Promise.all([
@@ -321,40 +317,39 @@ const Dashboard = ({ user, onNoAccess }) => {
       try {
         const updatePayload = { data };
         
-        // Função auxiliar para upload com conversão adequada para Blob
-        const uploadFileWithBlob = async (file, basePath, itemId) => {
-          if (file.file) {
-            // Converter File para Blob adequadamente (crítico para PDFs)
-            const blob = new Blob([file.file], { type: file.file.type || 'application/octet-stream' });
-            const fileName = `${itemId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
-            const storageRef = ref(storage, `${basePath}/${fileName}`);
-            
-            // Metadados para garantir tipo correto
-            const metadata = {
-              contentType: file.file.type || 'application/octet-stream',
-              customMetadata: {
-                originalName: file.file.name
-              }
-            };
-            
-            await uploadBytes(storageRef, blob, metadata);
-            const downloadUrl = await getDownloadURL(storageRef);
-            return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
-          } else if (file.url) {
-            return file;
-          }
-        };
+        // Upload paralelo dos arquivos
+        const uploadPromises = [];
 
         // Processa arquivos de Nota Fiscal se fornecidos
         if (filesNF && filesNF.length > 0) {
-          const nfPromises = filesNF.map(file => uploadFileWithBlob(file, 'anexosNF', id));
+          const nfPromises = filesNF.map(async (file) => {
+            if (file.file) {
+              const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
+              const storageRef = ref(storage, `anexosNF/${fileName}`);
+              await uploadBytes(storageRef, file.file);
+              const downloadUrl = await getDownloadURL(storageRef);
+              return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
+            } else if (file.url) {
+              return file;
+            }
+          });
           const nfUrls = await Promise.all(nfPromises);
           updatePayload.anexosNF = nfUrls.filter(Boolean);
         }
 
         // Processa arquivos de Boleto se fornecidos
         if (filesBoleto && filesBoleto.length > 0) {
-          const boletoPromises = filesBoleto.map(file => uploadFileWithBlob(file, 'anexosBoleto', id));
+          const boletoPromises = filesBoleto.map(async (file) => {
+            if (file.file) {
+              const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.file.name}`;
+              const storageRef = ref(storage, `anexosBoleto/${fileName}`);
+              await uploadBytes(storageRef, file.file);
+              const downloadUrl = await getDownloadURL(storageRef);
+              return { name: file.file.name, url: downloadUrl, date: new Date().toLocaleString('pt-BR'), size: file.size };
+            } else if (file.url) {
+              return file;
+            }
+          });
           const boletoUrls = await Promise.all(boletoPromises);
           updatePayload.anexosBoleto = boletoUrls.filter(Boolean);
         }
