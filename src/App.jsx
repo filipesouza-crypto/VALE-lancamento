@@ -27,7 +27,7 @@ import {
   FolderOpen, DollarSign, Eye, Edit, Search,
   ArrowUpDown, Lock, LogOut, UserCog, History, ExternalLink,
   Download, FileSpreadsheet, File as FileIcon, FileType,
-  Undo2, Filter, Calendar
+  Undo2, Filter, Calendar, Menu
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO FIREBASE ---
@@ -52,6 +52,76 @@ const ALLOWED_FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image
 const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.xlsx'];
 
 const MASTER_USER = 'filipe.souza@shipstore.com.br';
+
+// --- FUNÇÕES DE EXPORTAÇÃO ---
+const exportToCSV = (data, filename) => {
+  if (!data || data.length === 0) {
+    alert('Nenhum dado para exportar');
+    return;
+  }
+
+  const headers = Object.keys(data[0]);
+  const csvContent = [
+    headers.join(','),
+    ...data.map(row => headers.map(header => {
+      const value = row[header];
+      // Escapar vírgulas e aspas
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value || '';
+    }).join(','))
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+};
+
+const exportToJSON = (data, filename) => {
+  if (!data || data.length === 0) {
+    alert('Nenhum dado para exportar');
+    return;
+  }
+
+  const jsonContent = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonContent], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${filename}_${new Date().toISOString().split('T')[0]}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+};
+
+const exportToExcel = (data, filename) => {
+  if (!data || data.length === 0) {
+    alert('Nenhum dado para exportar');
+    return;
+  }
+
+  // Criar HTML table
+  const headers = Object.keys(data[0]);
+  const htmlTable = `
+    <table>
+      <thead>
+        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${data.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+
+  const blob = new Blob([htmlTable], { type: 'application/vnd.ms-excel' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${filename}_${new Date().toISOString().split('T')[0]}.xls`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+};
 
 // --- FUNÇÃO DE LOG ---
 const logAction = async (userEmail, action, details) => {
@@ -212,7 +282,7 @@ const LoginScreen = ({ errorFromApp }) => {
           <div className="bg-blue-600 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <Receipt className="text-white" size={40} />
           </div>
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight">LMA - VALE</h1>
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight">LMA Finanças</h1>
           <p className="text-slate-400 text-sm mt-2 font-medium">Controle de Notas Fiscais</p>
         </div>
 
@@ -248,6 +318,7 @@ const Dashboard = ({ user, onNoAccess }) => {
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [modalPreview, setModalPreview] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const userEmail = user.email;
   const isMaster = userEmail === MASTER_USER;
@@ -256,6 +327,8 @@ const Dashboard = ({ user, onNoAccess }) => {
   const [rawItems, setRawItems] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [logsList, setLogsList] = useState([]);
+  const [filiais, setFiliais] = useState([]);
+  const [userFiliais, setUserFiliais] = useState([]);
 
   useEffect(() => {
     if (!userEmail) return;
@@ -288,38 +361,95 @@ const Dashboard = ({ user, onNoAccess }) => {
     const unsubLogs = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), limit(500)), (snapshot) => {
       setLogsList(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
     });
+    const unsubFiliais = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'filiais'), (snapshot) => setFiliais(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+    
+    // Carregar filiais do usuário
+    const permRef = doc(db, 'artifacts', appId, 'public', 'data', 'permissions', userEmail);
+    const unsubUserFiliais = onSnapshot(permRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUserFiliais(docSnap.data().filiais || []);
+      } else {
+        setUserFiliais([]);
+      }
+    });
 
     let unsubUsers = () => { };
     if (isMaster) {
       unsubUsers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'permissions'), (snapshot) => setUsersList(snapshot.docs.map(d => ({ id: d.id, email: d.id, ...d.data() }))));
     }
 
-    return () => { if (unsubPerms) unsubPerms(); unsubFdas(); unsubItems(); unsubUsers(); unsubLogs(); };
+    return () => { if (unsubPerms) unsubPerms(); unsubFdas(); unsubItems(); unsubUsers(); unsubLogs(); unsubFiliais(); unsubUserFiliais(); };
   }, [userEmail, isMaster]);
 
-  const fdasWithItems = useMemo(() => fdas.map(fda => ({ ...fda, items: rawItems.filter(item => item.fdaId === fda.id) })).sort((a, b) => (b.number || '').localeCompare(a.number || '')), [fdas, rawItems]);
-  const allItems = useMemo(() => rawItems.map(item => ({ ...item, fdaNumber: fdas.find(f => f.id === item.fdaId)?.number || 'N/A' })), [rawItems, fdas]);
+  const fdasWithItems = useMemo(() => {
+    let filteredFdas = fdas;
+    let filteredItems = rawItems;
+    
+    // Se não for master, filtrar por filiais
+    if (!isMaster && userFiliais.length > 0) {
+      filteredFdas = fdas.filter(fda => userFiliais.includes(fda.filialId));
+      filteredItems = rawItems.filter(item => {
+        const fda = fdas.find(f => f.id === item.fdaId);
+        return fda && userFiliais.includes(fda.filialId);
+      });
+    }
+    
+    return filteredFdas.map(fda => ({ 
+      ...fda, 
+      items: filteredItems.filter(item => item.fdaId === fda.id) 
+    })).sort((a, b) => (b.number || '').localeCompare(a.number || ''));
+  }, [fdas, rawItems, isMaster, userFiliais]);
+  
+  const allItems = useMemo(() => {
+    let filteredItems = rawItems;
+    
+    // Se não for master, filtrar por filiais
+    if (!isMaster && userFiliais.length > 0) {
+      filteredItems = rawItems.filter(item => {
+        const fda = fdas.find(f => f.id === item.fdaId);
+        return fda && userFiliais.includes(fda.filialId);
+      });
+    }
+    
+    return filteredItems.map(item => ({ 
+      ...item, 
+      fdaNumber: fdas.find(f => f.id === item.fdaId)?.number || 'N/A',
+      filialName: filiais.find(f => {
+        const fda = fdas.find(fd => fd.id === item.fdaId);
+        return fda && f.id === fda.filialId;
+      })?.nome || 'N/A'
+    }));
+  }, [rawItems, fdas, filiais, isMaster, userFiliais]);
 
   // Actions
-  const addFda = async () => {
+  const addFda = async (filialId) => {
+    if (!filialId) {
+      alert('Selecione uma filial antes de criar o atendimento.');
+      return;
+    }
     const number = `FDA-${new Date().getFullYear()}-${String(fdas.length + 1).padStart(3, '0')}`;
-    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fdas'), { number, createdAt: new Date().toISOString(), isOpen: true });
-    logAction(userEmail, 'CRIAR FDA', `FDA Criada: ${number}`);
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fdas'), { 
+      number, 
+      filialId,
+      createdAt: new Date().toISOString(), 
+      isOpen: true 
+    });
+    logAction(userEmail, 'CRIAR FDA', `FDA Criada: ${number} - Filial: ${filiais.find(f => f.id === filialId)?.nome}`);
   };
   const toggleFda = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { isOpen: !status });
   const updateFdaNumber = async (id, val) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { number: val.toUpperCase() });
-
+  
   const deleteFda = async (fdaId, fdaNumber) => {
     // Verificar se a FDA tem itens
     const fdaItems = rawItems.filter(item => item.fdaId === fdaId);
-
+    
     if (fdaItems.length > 0) {
       alert('Este atendimento possui lançamentos e não pode ser excluído. Exclua os lançamentos primeiro.');
       return;
     }
-
+    
     if (!window.confirm(`Tem certeza que deseja excluir o atendimento ${fdaNumber}?`)) return;
-
+    
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', fdaId));
       logAction(userEmail, 'EXCLUIR FDA', `FDA excluída: ${fdaNumber}`);
@@ -561,22 +691,53 @@ const Dashboard = ({ user, onNoAccess }) => {
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col fixed h-full z-10 print:hidden">
-        <div className="p-8"><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-md"><Receipt size={18} className="text-white" /></div>LMA Finanças</h1></div>
+      {/* Botão Menu Mobile */}
+      <button 
+        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-3 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700 transition-all"
+      >
+        <Menu size={24} />
+      </button>
+
+      {/* Overlay para fechar menu mobile */}
+      {mobileMenuOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`w-64 bg-white border-r border-slate-200 flex flex-col fixed h-full z-40 print:hidden transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="p-8">
+          <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
+              <Receipt size={18} className="text-white" />
+            </div>
+            LMA Finanças
+          </h1>
+        </div>
         <nav className="flex-1 px-4 space-y-1">
-          {userPermissions.includes('entry') && <NavButton active={currentModule === 'entry'} onClick={() => setCurrentModule('entry')} icon={<FolderOpen size={18} />} label="Lançamento" />}
-          {userPermissions.includes('launched') && <NavButton active={currentModule === 'launched'} onClick={() => setCurrentModule('launched')} icon={<FileText size={18} />} label="Itens Lançados" />}
-          {userPermissions.includes('finance') && <NavButton active={currentModule === 'finance'} onClick={() => setCurrentModule('finance')} icon={<DollarSign size={18} />} label="Contas a Pagar" />}
-          {userPermissions.includes('logs') && <NavButton active={currentModule === 'logs'} onClick={() => setCurrentModule('logs')} icon={<History size={18} />} label="Logs do Sistema" />}
-          {isMaster && (<> <div className="pt-6 pb-2 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Painel Admin</div> <NavButton active={currentModule === 'users'} onClick={() => setCurrentModule('users')} icon={<UserCog size={18} />} label="Usuários" /> </>)}
+          {userPermissions.includes('entry') && <NavButton active={currentModule === 'entry'} onClick={() => { setCurrentModule('entry'); setMobileMenuOpen(false); }} icon={<FolderOpen size={18} />} label="Lançamento" />}
+          {userPermissions.includes('launched') && <NavButton active={currentModule === 'launched'} onClick={() => { setCurrentModule('launched'); setMobileMenuOpen(false); }} icon={<FileText size={18} />} label="Itens Lançados" />}
+          {userPermissions.includes('finance') && <NavButton active={currentModule === 'finance'} onClick={() => { setCurrentModule('finance'); setMobileMenuOpen(false); }} icon={<DollarSign size={18} />} label="Contas a Pagar" />}
+          {userPermissions.includes('logs') && <NavButton active={currentModule === 'logs'} onClick={() => { setCurrentModule('logs'); setMobileMenuOpen(false); }} icon={<History size={18} />} label="Logs do Sistema" />}
+          {isMaster && (<> <div className="pt-6 pb-2 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Painel Admin</div> <NavButton active={currentModule === 'filiais'} onClick={() => { setCurrentModule('filiais'); setMobileMenuOpen(false); }} icon={<FolderOpen size={18} />} label="Filiais" /> <NavButton active={currentModule === 'users'} onClick={() => { setCurrentModule('users'); setMobileMenuOpen(false); }} icon={<UserCog size={18} />} label="Usuários" /> </>)}
         </nav>
-        <div className="p-6 bg-slate-50 mt-auto border-t"><button onClick={() => signOut(auth)} className="w-full flex items-center justify-center gap-2 text-xs font-black uppercase text-slate-500 hover:text-red-600"><LogOut size={14} /> Sair do Sistema</button></div>
+        <div className="p-6 bg-slate-50 mt-auto border-t">
+          <button onClick={() => signOut(auth)} className="w-full flex items-center justify-center gap-2 text-xs font-black uppercase text-slate-500 hover:text-red-600">
+            <LogOut size={14} /> Sair do Sistema
+          </button>
+        </div>
       </aside>
-      <main className="flex-1 ml-64 p-10 overflow-y-auto print:m-0">
-        {currentModule === 'entry' && <EntryModule userEmail={userEmail} fdas={fdasWithItems} allHistory={rawItems} addFda={addFda} toggleFda={toggleFda} updateFdaNumber={updateFdaNumber} saveItem={saveItem} updateItem={updateItem} deleteItem={deleteItem} editTarget={itemToEdit} clearEditTarget={() => setItemToEdit(null)} onEdit={triggerEdit} onPreview={(files, title) => setModalPreview({ title, files })} />}
+
+      {/* Main Content */}
+      <main className="flex-1 lg:ml-64 p-4 sm:p-6 md:p-10 overflow-y-auto print:m-0 mt-16 lg:mt-0">
+        {currentModule === 'entry' && <EntryModule userEmail={userEmail} fdas={fdasWithItems} allHistory={rawItems} addFda={addFda} toggleFda={toggleFda} updateFdaNumber={updateFdaNumber} deleteFda={deleteFda} saveItem={saveItem} updateItem={updateItem} deleteItem={deleteItem} editTarget={itemToEdit} clearEditTarget={() => setItemToEdit(null)} onEdit={triggerEdit} onPreview={(files, title) => setModalPreview({ title, files })} filiais={filiais} userFiliais={userFiliais} isMaster={isMaster} />}
         {currentModule === 'launched' && <LaunchedModule allItems={allItems} userPermissions={userPermissions} onEdit={triggerEdit} onDelete={deleteItem} onPreview={(files) => setModalPreview({ title: 'Visualização', files })} />}
         {currentModule === 'finance' && <FinanceModule allItems={allItems} isMaster={isMaster} userPermissions={userPermissions} updateItem={updateItem} onPreview={(files, title) => setModalPreview({ title, files })} onDelete={deleteItem} />}
-        {currentModule === 'users' && isMaster && <UserManagementModule usersList={usersList} />}
+        {currentModule === 'filiais' && isMaster && <FiliaisModule filiais={filiais} userEmail={userEmail} />}
+        {currentModule === 'users' && isMaster && <UserManagementModule usersList={usersList} filiais={filiais} />}
         {currentModule === 'logs' && <LogsModule logs={logsList} />}
       </main>
 
@@ -702,6 +863,66 @@ const FilterBar = ({ search, onSearchChange, sortBy, onSortChange, filterStatus,
 };
 
 const NavButton = ({ active, onClick, icon, label }) => (<button onClick={onClick} className={`w-full flex items-center gap-3 px-6 py-4 rounded-xl transition-all font-bold text-sm tracking-tight ${active ? 'bg-blue-600 text-white shadow-xl translate-x-1' : 'text-slate-400 hover:text-slate-800 hover:bg-slate-100'}`}>{icon}<span>{label}</span></button>);
+
+// Componente de Botão de Exportação
+const ExportButton = ({ data, filename, label = "Exportar Dados" }) => {
+  const [showMenu, setShowMenu] = useState(false);
+
+  const handleExport = (format) => {
+    if (format === 'csv') {
+      exportToCSV(data, filename);
+    } else if (format === 'json') {
+      exportToJSON(data, filename);
+    } else if (format === 'excel') {
+      exportToExcel(data, filename);
+    }
+    setShowMenu(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowMenu(!showMenu)}
+        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-green-700 transition-all shadow-md"
+      >
+        <Download size={16} />
+        <span className="hidden sm:inline">{label}</span>
+      </button>
+      
+      {showMenu && (
+        <>
+          <div 
+            className="fixed inset-0 z-10" 
+            onClick={() => setShowMenu(false)}
+          />
+          <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-20">
+            <button
+              onClick={() => handleExport('excel')}
+              className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors flex items-center gap-2 text-sm font-bold text-slate-700"
+            >
+              <FileSpreadsheet size={16} className="text-green-600" />
+              Excel (.xls)
+            </button>
+            <button
+              onClick={() => handleExport('csv')}
+              className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors flex items-center gap-2 text-sm font-bold text-slate-700"
+            >
+              <FileText size={16} className="text-blue-600" />
+              CSV (.csv)
+            </button>
+            <button
+              onClick={() => handleExport('json')}
+              className="w-full px-4 py-3 text-left hover:bg-slate-50 transition-colors flex items-center gap-2 text-sm font-bold text-slate-700"
+            >
+              <FileIcon size={16} className="text-purple-600" />
+              JSON (.json)
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 const StatusBadge = ({ status }) => {
   const styles = { 'PENDENTE': 'bg-red-100 text-red-600', 'PROVISIONADO': 'bg-yellow-100 text-yellow-700', 'APROVADO': 'bg-blue-100 text-blue-700', 'PAGO': 'bg-green-100 text-green-700' };
   return (<span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg tracking-widest ${styles[status] || styles['PENDENTE']}`}>{status}</span>);
@@ -824,8 +1045,22 @@ const LogsModule = ({ logs }) => {
   return (
     <div className="max-w-7xl mx-auto">
       <header className="mb-8">
-        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg mb-2">Logs do Sistema</h2>
-        <p className="text-slate-500 font-medium mb-6">Auditoria de ações dos usuários</p>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Logs do Sistema</h2>
+            <p className="text-slate-500 font-medium mt-1">Auditoria de ações dos usuários</p>
+          </div>
+          <ExportButton 
+            data={filteredLogs.map(log => ({
+              'Data/Hora': new Date(log.timestamp).toLocaleString('pt-BR'),
+              'Usuário': log.user,
+              'Ação': log.action,
+              'Detalhes': log.details
+            }))}
+            filename="logs-sistema"
+            label="Exportar"
+          />
+        </div>
 
         {/* Barra de Filtros Customizada para Logs */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -926,50 +1161,10 @@ const LogsModule = ({ logs }) => {
   );
 };
 
-const UserManagementModule = ({ usersList }) => {
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const handleUpdate = async (email, mod, has) => { const user = usersList.find(u => u.email === email); let mods = user ? (user.modules || []) : []; if (has) { if (!mods.includes(mod)) mods.push(mod); } else { mods = mods.filter(m => m !== mod); } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', email), { modules: mods }, { merge: true }); };
-  const addUser = async () => { if (!newUserEmail) return; await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', newUserEmail.toLowerCase().trim()), { modules: ['entry'] }); setNewUserEmail(''); };
 
-  // Definição das permissões granulares (Abas)
-  const permissions = [
-    { id: 'entry', label: 'Módulo: Lançamento' },
-    { id: 'launched', label: 'Módulo: Itens Lançados' },
-    { id: 'launched_open', label: 'Aba: Em Aberto' },
-    { id: 'launched_paid', label: 'Aba: Liquidados' },
-    { id: 'finance', label: 'Módulo: Contas a Pagar' },
-    { id: 'finance_pending', label: 'Aba: A Pagar' },
-    { id: 'finance_provision', label: 'Aba: Provisionado' },
-    { id: 'finance_approved', label: 'Aba: Aprovado' },
-    { id: 'finance_paid', label: 'Aba: Liquidados' },
-    { id: 'logs', label: 'Módulo: Logs' }
-  ];
-
-  return (
-    <div className="max-w-6xl mx-auto">
-      <h2 className="text-3xl font-black mb-10 tracking-tight uppercase text-lg">Gerenciar Usuários</h2>
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8"><div className="flex gap-4"><input type="email" placeholder="nome@empresa.com" className="flex-1 border border-slate-200 bg-slate-50 rounded-xl px-4 py-3" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} /><button onClick={addUser} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs">Autorizar</button></div></div>
-      <div className="grid gap-6">
-        {usersList.map(user => (
-          <div key={user.email} className="bg-white rounded-2xl border border-slate-200 p-6">
-            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><UserCog size={18} className="text-blue-600" /> {user.email}</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {permissions.map(perm => (
-                <label key={perm.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-slate-50 p-2 rounded">
-                  <input type="checkbox" className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked={user.modules?.includes(perm.id)} onChange={(e) => handleUpdate(user.email, perm.id, e.target.checked)} />
-                  {perm.label}
-                </label>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, saveItem, updateItem, deleteItem, allHistory, editTarget, clearEditTarget, onEdit, onPreview }) => {
+const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, deleteFda, saveItem, updateItem, deleteItem, allHistory, editTarget, clearEditTarget, onEdit, onPreview, filiais, userFiliais, isMaster }) => {
   const [activeFdaId, setActiveFdaId] = useState(null);
+  const [selectedFilial, setSelectedFilial] = useState('');
   const [formData, setFormData] = useState({
     status: 'PENDENTE', navio: '', vencimento: '', servicos: '', documento: '', dataEmissao: '',
     valorBruto: 0, centroCusto: '', nfs: '', valorBase: 0, valorLiquido: 0,
@@ -1159,7 +1354,49 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, save
       <datalist id="clients-list">{clients.map(c => <option key={c} value={c} />)}</datalist>
       <datalist id="vessels-list">{vessels.map(v => <option key={v} value={v} />)}</datalist>
 
-      <div className="flex justify-between items-center mb-10"><h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg">Lançamento de Itens</h2><button onClick={addFda} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-slate-800 shadow-xl transition-all"><Plus size={18} /> Novo Atendimento</button></div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10">
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Lançamento de Itens</h2>
+        <div className="flex flex-wrap items-center gap-4">
+          <ExportButton 
+            data={fdas.flatMap(fda => 
+              fda.items.map(item => ({
+                'Atendimento': fda.number,
+                'Filial': filiais.find(f => f.id === fda.filialId)?.nome || 'N/A',
+                'Serviço': item.data.servicos,
+                'Cliente/Fornecedor': item.data.clienteFornecedor,
+                'CNPJ/CPF': item.data.cnpjCpf || 'N/A',
+                'Navio': item.data.navio || 'N/A',
+                'Documento': item.data.documento || 'N/A',
+                'NF': item.data.nfs || 'N/A',
+                'Emissão': item.data.dataEmissao || 'N/A',
+                'Vencimento': item.data.vencimento || 'N/A',
+                'Valor Bruto': parseFloat(item.data.valorBruto || 0).toFixed(2),
+                'Valor Líquido': parseFloat(item.data.valorLiquido || 0).toFixed(2),
+                'Total': parseFloat(item.data.total || 0).toFixed(2),
+                'Status': item.data.status,
+                'Centro Custo': item.data.centroCusto || 'N/A',
+                'Banco': item.data.banco || 'N/A',
+                'Agência': item.data.agencia || 'N/A',
+                'Conta': item.data.contaCorrente || 'N/A',
+                'PIX': item.data.chavePix || 'N/A'
+              }))
+            )}
+            filename="lancamentos"
+            label="Exportar"
+          />
+          <select 
+            value={selectedFilial} 
+            onChange={(e) => setSelectedFilial(e.target.value)}
+            className="px-4 py-3 bg-white border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-sm font-bold"
+          >
+            <option value="">Selecione a Filial</option>
+            {(isMaster ? filiais : filiais.filter(f => userFiliais.includes(f.id))).map(filial => (
+              <option key={filial.id} value={filial.id}>{filial.nome}</option>
+            ))}
+          </select>
+          <button onClick={() => addFda(selectedFilial)} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-2 hover:bg-slate-800 shadow-xl transition-all whitespace-nowrap"><Plus size={18} /> Novo Atendimento</button>
+        </div>
+      </div>
       <div className="space-y-8">{fdas.map(f => (
         <div key={f.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-slate-50 p-6 flex justify-between items-center cursor-pointer" onClick={() => toggleFda(f.id, f.isOpen)}>
@@ -1412,7 +1649,30 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
   return (
     <div className="max-w-7xl mx-auto">
       <header className="mb-8">
-        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg mb-6">Itens Lançados</h2>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Itens Lançados</h2>
+          <ExportButton 
+            data={filtered.map(item => ({
+              'FDA': item.fdaNumber,
+              'Filial': item.filialName,
+              'Serviço': item.data.servicos,
+              'Cliente/Fornecedor': item.data.clienteFornecedor,
+              'CNPJ/CPF': item.data.cnpjCpf || 'N/A',
+              'Navio': item.data.navio || 'N/A',
+              'Documento': item.data.documento || 'N/A',
+              'NF': item.data.nfs || 'N/A',
+              'Vencimento': item.data.vencimento,
+              'Valor Total': `R$ ${parseFloat(item.data.total || 0).toFixed(2)}`,
+              'Status': item.data.status,
+              'Centro Custo': item.data.centroCusto || 'N/A',
+              'Data Provisionamento': item.data.dataProvisionamento || 'N/A',
+              'Data Aprovação': item.data.dataAprovacao || 'N/A',
+              'Data Pagamento': item.data.dataPagamentoReal || 'N/A'
+            }))}
+            filename={`itens-lancados-${tab}`}
+            label="Exportar"
+          />
+        </div>
 
         {/* Barra de Filtros */}
         <FilterBar
@@ -1593,7 +1853,33 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
   return (
     <div className="max-w-7xl mx-auto">
       <header className="mb-8">
-        <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase text-lg mb-6">Contas a Pagar</h2>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Contas a Pagar</h2>
+          <ExportButton 
+            data={groupedItems.flatMap(group => group.items).map(item => ({
+              'Vencimento': item.data.vencimento,
+              'Serviço': item.data.servicos,
+              'Cliente/Fornecedor': item.data.clienteFornecedor,
+              'CNPJ/CPF': item.data.cnpjCpf || 'N/A',
+              'Navio': item.data.navio || 'N/A',
+              'Documento': item.data.documento || 'N/A',
+              'NF': item.data.nfs || 'N/A',
+              'Valor Total': `R$ ${parseFloat(item.data.total || 0).toFixed(2)}`,
+              'Status': item.data.status,
+              'Centro Custo': item.data.centroCusto || 'N/A',
+              'Data Provisionamento': item.data.dataProvisionamento || 'N/A',
+              'Data Aprovação': item.data.dataAprovacao || 'N/A',
+              'Data Pagamento Real': item.data.dataPagamentoReal || 'N/A',
+              'Banco': item.data.banco || 'N/A',
+              'Agência': item.data.agencia || 'N/A',
+              'Conta': item.data.contaCorrente || 'N/A',
+              'PIX': item.data.chavePix || 'N/A',
+              'Valor Pago': item.data.valorPago ? `R$ ${parseFloat(item.data.valorPago).toFixed(2)}` : 'N/A'
+            }))}
+            filename={`contas-a-pagar-${aT.toLowerCase()}`}
+            label="Exportar"
+          />
+        </div>
 
         {/* Barra de Filtros */}
         <FilterBar
@@ -1686,6 +1972,394 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
             </div>
           ))
         )}
+      </div>
+    </div>
+  );
+};
+// --- MÓDULO DE GERENCIAMENTO DE FILIAIS ---
+const FiliaisModule = ({ filiais, userEmail }) => {
+  const [novaFilial, setNovaFilial] = useState('');
+  const [editando, setEditando] = useState(null);
+  const [nomeEdit, setNomeEdit] = useState('');
+
+  const adicionarFilial = async () => {
+    if (!novaFilial.trim()) {
+      alert('Digite o nome da filial');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'filiais'), {
+        nome: novaFilial.trim(),
+        criadoEm: new Date().toISOString(),
+        criadoPor: userEmail
+      });
+      await logAction(userEmail, 'CRIAR FILIAL', `Filial criada: ${novaFilial}`);
+      setNovaFilial('');
+    } catch (error) {
+      console.error('Erro ao criar filial:', error);
+      alert('Erro ao criar filial');
+    }
+  };
+
+  const atualizarFilial = async (id) => {
+    if (!nomeEdit.trim()) {
+      alert('Digite o nome da filial');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'filiais', id), {
+        nome: nomeEdit.trim()
+      });
+      await logAction(userEmail, 'ATUALIZAR FILIAL', `Filial atualizada: ${nomeEdit}`);
+      setEditando(null);
+      setNomeEdit('');
+    } catch (error) {
+      console.error('Erro ao atualizar filial:', error);
+      alert('Erro ao atualizar filial');
+    }
+  };
+
+  const excluirFilial = async (id, nome) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a filial "${nome}"?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'filiais', id));
+      await logAction(userEmail, 'EXCLUIR FILIAL', `Filial excluída: ${nome}`);
+    } catch (error) {
+      console.error('Erro ao excluir filial:', error);
+      alert('Erro ao excluir filial');
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Gerenciar Filiais</h2>
+        <ExportButton 
+          data={filiais.map(f => ({
+            'Nome': f.nome,
+            'Criado em': new Date(f.criadoEm).toLocaleDateString('pt-BR'),
+            'Criado por': f.criadoPor
+          }))}
+          filename="filiais"
+          label="Exportar"
+        />
+      </div>
+
+      {/* Adicionar Nova Filial */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-8">
+        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest mb-4">Nova Filial</h3>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <input
+            type="text"
+            value={novaFilial}
+            onChange={(e) => setNovaFilial(e.target.value)}
+            placeholder="Nome da filial (ex: Filial Rio de Janeiro)"
+            className="flex-1 px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-sm font-medium"
+            onKeyPress={(e) => e.key === 'Enter' && adicionarFilial()}
+          />
+          <button
+            onClick={adicionarFilial}
+            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:shadow-xl transition-all whitespace-nowrap"
+          >
+            <Plus size={18} className="inline mr-2" />
+            Adicionar
+          </button>
+        </div>
+      </div>
+
+      {/* Lista de Filiais */}
+      <div className="space-y-4">
+        {filiais.length === 0 ? (
+          <div className="text-center py-20 text-slate-300 italic font-medium">
+            Nenhuma filial cadastrada. Adicione a primeira filial acima.
+          </div>
+        ) : (
+          filiais.map((filial) => (
+            <div key={filial.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-center justify-between">
+                {editando === filial.id ? (
+                  <div className="flex-1 flex items-center gap-4">
+                    <input
+                      type="text"
+                      value={nomeEdit}
+                      onChange={(e) => setNomeEdit(e.target.value)}
+                      className="flex-1 px-4 py-2 bg-slate-50 border-2 border-blue-500 rounded-xl focus:ring-4 focus:ring-blue-100 outline-none text-sm font-medium"
+                      autoFocus
+                      onKeyPress={(e) => e.key === 'Enter' && atualizarFilial(filial.id)}
+                    />
+                    <button
+                      onClick={() => atualizarFilial(filial.id)}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-black uppercase hover:bg-green-700"
+                    >
+                      <CheckCircle2 size={16} className="inline mr-1" />
+                      Salvar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditando(null);
+                        setNomeEdit('');
+                      }}
+                      className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-black uppercase hover:bg-slate-300"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <h3 className="font-black text-slate-800 text-lg">{filial.nome}</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Criado em {new Date(filial.criadoEm).toLocaleDateString('pt-BR')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setEditando(filial.id);
+                          setNomeEdit(filial.nome);
+                        }}
+                        className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Editar"
+                      >
+                        <Edit size={18} />
+                      </button>
+                      <button
+                        onClick={() => excluirFilial(filial.id, filial.nome)}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Excluir"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- MÓDULO DE GERENCIAMENTO DE USUÁRIOS ATUALIZADO ---
+const UserManagementModule = ({ usersList, filiais }) => {
+  const [newUserEmail, setNewUserEmail] = useState('');
+  
+  const permissions = [
+    { id: 'entry', label: 'Módulo: Lançamento', category: 'module' },
+    { id: 'launched', label: 'Módulo: Itens Lançados', category: 'module' },
+    { id: 'launched_open', label: 'Aba: Em Aberto', category: 'tab' },
+    { id: 'launched_paid', label: 'Aba: Liquidados', category: 'tab' },
+    { id: 'finance', label: 'Módulo: Contas a Pagar', category: 'module' },
+    { id: 'finance_pending', label: 'Aba: A Pagar', category: 'tab' },
+    { id: 'finance_provision', label: 'Aba: Provisionado', category: 'tab' },
+    { id: 'finance_approved', label: 'Aba: Aprovado', category: 'tab' },
+    { id: 'finance_paid', label: 'Aba: Liquidados', category: 'tab' },
+    { id: 'logs', label: 'Módulo: Logs', category: 'module' }
+  ];
+
+  const addUser = async () => {
+    if (!newUserEmail || !newUserEmail.includes('@')) {
+      alert('Digite um e-mail válido');
+      return;
+    }
+    
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', newUserEmail), {
+        modules: ['entry'],
+        filiais: [],
+        createdAt: new Date().toISOString()
+      });
+      await logAction(MASTER_USER, 'ADICIONAR USUÁRIO', `Usuário ${newUserEmail} adicionado`);
+      setNewUserEmail('');
+    } catch (error) {
+      console.error('Erro ao adicionar usuário:', error);
+      alert('Erro ao adicionar usuário');
+    }
+  };
+
+  const handleUpdate = async (email, moduleId, isChecked) => {
+    const user = usersList.find(u => u.email === email);
+    if (!user) return;
+
+    const currentModules = user.modules || [];
+    const newModules = isChecked 
+      ? [...currentModules, moduleId]
+      : currentModules.filter(m => m !== moduleId);
+
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', email), {
+        modules: newModules
+      });
+      await logAction(MASTER_USER, 'ATUALIZAR PERMISSÃO', `Permissões de ${email} atualizadas`);
+    } catch (error) {
+      console.error('Erro ao atualizar permissões:', error);
+      alert('Erro ao atualizar permissões');
+    }
+  };
+
+  const handleFilialUpdate = async (email, filialId, isChecked) => {
+    const user = usersList.find(u => u.email === email);
+    if (!user) return;
+
+    const currentFiliais = user.filiais || [];
+    const newFiliais = isChecked 
+      ? [...currentFiliais, filialId]
+      : currentFiliais.filter(f => f !== filialId);
+
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', email), {
+        filiais: newFiliais
+      });
+      await logAction(MASTER_USER, 'ATUALIZAR FILIAIS', `Filiais de ${email} atualizadas`);
+    } catch (error) {
+      console.error('Erro ao atualizar filiais:', error);
+      alert('Erro ao atualizar filiais');
+    }
+  };
+
+  const deleteUser = async (email) => {
+    if (email === MASTER_USER) {
+      alert('Não é possível remover o usuário master');
+      return;
+    }
+
+    if (!window.confirm(`Tem certeza que deseja remover ${email}?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', email));
+      await logAction(MASTER_USER, 'REMOVER USUÁRIO', `Usuário ${email} removido`);
+    } catch (error) {
+      console.error('Erro ao remover usuário:', error);
+      alert('Erro ao remover usuário');
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Gerenciar Usuários</h2>
+        <ExportButton 
+          data={usersList.map(u => ({
+            'E-mail': u.email,
+            'Módulos': (u.modules || []).join(', '),
+            'Filiais': (u.filiais || []).map(fId => filiais.find(f => f.id === fId)?.nome).filter(Boolean).join(', ') || 'Nenhuma',
+            'Criado em': u.createdAt ? new Date(u.createdAt).toLocaleDateString('pt-BR') : 'N/A'
+          }))}
+          filename="usuarios"
+          label="Exportar"
+        />
+      </div>
+      
+      {/* Adicionar Novo Usuário */}
+      <div className="bg-white p-4 sm:p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <input 
+            type="email" 
+            placeholder="nome@empresa.com" 
+            className="flex-1 border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none text-sm font-medium" 
+            value={newUserEmail} 
+            onChange={e => setNewUserEmail(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && addUser()}
+          />
+          <button 
+            onClick={addUser} 
+            className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all whitespace-nowrap"
+          >
+            Autorizar
+          </button>
+        </div>
+      </div>
+
+      {/* Lista de Usuários */}
+      <div className="grid gap-6">
+        {usersList.map(user => (
+          <div key={user.email} className="bg-white rounded-2xl border border-slate-200 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <UserCog size={18} className="text-blue-600" /> 
+                {user.email}
+                {user.email === MASTER_USER && (
+                  <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-black uppercase">Master</span>
+                )}
+              </h3>
+              {user.email !== MASTER_USER && (
+                <button
+                  onClick={() => deleteUser(user.email)}
+                  className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Remover usuário"
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
+            </div>
+
+            {/* Permissões - Módulos */}
+            <div className="mb-6">
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Módulos de Acesso</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {permissions.filter(p => p.category === 'module').map(perm => (
+                  <label key={perm.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" 
+                      checked={user.modules?.includes(perm.id)} 
+                      onChange={(e) => handleUpdate(user.email, perm.id, e.target.checked)}
+                      disabled={user.email === MASTER_USER}
+                    />
+                    {perm.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Permissões - Abas */}
+            <div className="mb-6">
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Abas Específicas</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {permissions.filter(p => p.category === 'tab').map(perm => (
+                  <label key={perm.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-blue-50 p-3 rounded-lg border border-blue-200 bg-blue-50/30">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" 
+                      checked={user.modules?.includes(perm.id)} 
+                      onChange={(e) => handleUpdate(user.email, perm.id, e.target.checked)}
+                      disabled={user.email === MASTER_USER}
+                    />
+                    {perm.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Filiais */}
+            <div>
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Filiais Autorizadas</h4>
+              {filiais.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">Nenhuma filial cadastrada. Cadastre filiais primeiro.</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {filiais.map(filial => (
+                    <label key={filial.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-slate-50 p-2 rounded">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" 
+                        checked={user.filiais?.includes(filial.id)} 
+                        onChange={(e) => handleFilialUpdate(user.email, filial.id, e.target.checked)}
+                        disabled={user.email === MASTER_USER}
+                      />
+                      {filial.nome}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
