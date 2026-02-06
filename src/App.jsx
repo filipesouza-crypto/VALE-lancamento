@@ -1753,6 +1753,8 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
   const [aT, setAT] = useState('PENDENTE');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('vencimento-asc');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState([]);
 
   // Definição das Abas com Permissões
   const steps = useMemo(() => {
@@ -1830,6 +1832,58 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
     if (s === 'PAGO') ups.dataPagamentoReal = n;
     await updateItem(id, { ...cur, ...ups });
   };
+
+  // Funções de seleção múltipla
+  const toggleSelection = (itemId) => {
+    setSelectedItems(prev => 
+      prev.includes(itemId) 
+        ? prev.filter(id => id !== itemId)
+        : [...prev, itemId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    const allIds = groupedItems.flatMap(group => group.items.map(item => item.id));
+    if (selectedItems.length === allIds.length) {
+      setSelectedItems([]);
+    } else {
+      setSelectedItems(allIds);
+    }
+  };
+
+  const approveSelected = async () => {
+    if (selectedItems.length === 0) {
+      alert('Selecione pelo menos um item para aprovar');
+      return;
+    }
+
+    if (!window.confirm(`Deseja aprovar ${selectedItems.length} ${selectedItems.length === 1 ? 'item' : 'itens'}?`)) {
+      return;
+    }
+
+    const n = new Date().toISOString().split('T')[0];
+    for (const itemId of selectedItems) {
+      const item = groupedItems.flatMap(g => g.items).find(i => i.id === itemId);
+      if (item) {
+        await handleStatus(item.id, item.data, 'APROVADO');
+      }
+    }
+    setSelectedItems([]);
+    setSelectionMode(false);
+  };
+
+  const totalSelecionado = useMemo(() => {
+    return groupedItems
+      .flatMap(group => group.items)
+      .filter(item => selectedItems.includes(item.id))
+      .reduce((sum, item) => sum + parseFloat(item.data.total || 0), 0);
+  }, [selectedItems, groupedItems]);
+
+  // Limpar seleção ao trocar de aba
+  useEffect(() => {
+    setSelectedItems([]);
+    setSelectionMode(false);
+  }, [aT]);
 
   const openFile = (files, title) => {
     if (files && files.length > 0) {
@@ -1915,6 +1969,65 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
         </div>
       )}
 
+      {/* Barra de Seleção Múltipla (apenas na aba PROVISIONADO) */}
+      {aT === 'PROVISIONADO' && totalItens > 0 && (
+        <div className="mb-6">
+          {!selectionMode ? (
+            <button
+              onClick={() => setSelectionMode(true)}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all shadow-md"
+            >
+              <CheckCircle2 size={18} />
+              Selecionar Múltiplos
+            </button>
+          ) : (
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg font-bold text-xs hover:bg-blue-50 transition-all"
+                  >
+                    <CheckCircle2 size={16} />
+                    {selectedItems.length === groupedItems.flatMap(g => g.items).length ? 'Desmarcar Todos' : 'Marcar Todos'}
+                  </button>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-blue-700 uppercase tracking-widest">
+                      {selectedItems.length} {selectedItems.length === 1 ? 'item selecionado' : 'itens selecionados'}
+                    </span>
+                    {selectedItems.length > 0 && (
+                      <span className="text-sm font-black text-blue-900">
+                        Total: R$ {totalSelecionado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={approveSelected}
+                    disabled={selectedItems.length === 0}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-green-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <CheckCircle2 size={18} />
+                    Aprovar Selecionados
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectionMode(false);
+                      setSelectedItems([]);
+                    }}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-200 text-slate-700 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-300 transition-all"
+                  >
+                    <X size={18} />
+                    <span className="hidden sm:inline">Cancelar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="space-y-8">
         {groupedItems.length === 0 ? (
           <div className="text-center py-20 text-slate-300 italic font-medium">
@@ -1939,27 +2052,38 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
                 <tbody className="divide-y divide-slate-50">
                   {group.items.map(it => (
                     <tr key={it.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-5 w-1/3">
+                      {/* Checkbox (apenas no modo de seleção e aba PROVISIONADO) */}
+                      {selectionMode && aT === 'PROVISIONADO' && (
+                        <td className="p-3 w-12">
+                          <input
+                            type="checkbox"
+                            checked={selectedItems.includes(it.id)}
+                            onChange={() => toggleSelection(it.id)}
+                            className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
+                      )}
+                      <td className="p-3 sm:p-5 w-full sm:w-1/3">
                         <div className="font-black text-slate-800 uppercase text-xs">{it.data.servicos}</div>
                         <div className="text-[10px] text-slate-400 font-bold mt-1">{it.data.clienteFornecedor}</div>
                         {it.data.navio && <div className="text-[10px] text-blue-600 font-bold mt-1">🚢 {it.data.navio}</div>}
                       </td>
-                      <td className="p-5 text-right font-black text-slate-900 w-1/6">
-                        R$ {parseFloat(it.data.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      <td className="p-3 sm:p-5 text-right font-black text-slate-900 w-auto sm:w-1/6">
+                        <div className="whitespace-nowrap">R$ {parseFloat(it.data.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                       </td>
-                      <td className="p-5 text-center w-1/4">
+                      <td className="p-3 sm:p-5 text-center w-auto sm:w-1/4 hidden md:table-cell">
                         <div className="flex gap-2 justify-center">
-                          <button onClick={() => openFile(it.anexosNF, "Nota Fiscal")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors"><ExternalLink size={10} /> Nota</button>
-                          <button onClick={() => openFile(it.anexosBoleto, "Boleto")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-slate-50 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors"><ExternalLink size={10} /> Boleto</button>
+                          <button onClick={() => openFile(it.data.anexosNF, "Nota Fiscal")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors"><ExternalLink size={10} /> Nota</button>
+                          <button onClick={() => openFile(it.data.anexosBoleto, "Boleto")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-slate-50 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors"><ExternalLink size={10} /> Boleto</button>
                         </div>
                       </td>
-                      <td className="p-5 text-center w-1/4">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="p-3 sm:p-5 text-center w-auto sm:w-1/4">
+                        <div className="flex items-center justify-end gap-2 flex-wrap">
                           {steps[aT].prev && (
                             <button onClick={() => handleStatus(it.id, it.data, steps[aT].prev)} className="p-2 text-slate-400 hover:text-orange-500 transition-colors" title="Retornar Status"><Undo2 size={18} /></button>
                           )}
-                          {steps[aT].next && (
-                            <button onClick={() => handleStatus(it.id, it.data, steps[aT].next)} className={`px-4 py-2 ${steps[aT].color} text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md hover:opacity-90 transition-all`}>
+                          {steps[aT].next && !selectionMode && (
+                            <button onClick={() => handleStatus(it.id, it.data, steps[aT].next)} className={`px-3 sm:px-4 py-2 ${steps[aT].color} text-white rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest shadow-md hover:opacity-90 transition-all whitespace-nowrap`}>
                               {steps[aT].btn}
                             </button>
                           )}
