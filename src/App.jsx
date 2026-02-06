@@ -362,7 +362,7 @@ const Dashboard = ({ user, onNoAccess }) => {
       setLogsList(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
     });
     const unsubFiliais = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'filiais'), (snapshot) => setFiliais(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
-    
+
     // Carregar filiais do usuário
     const permRef = doc(db, 'artifacts', appId, 'public', 'data', 'permissions', userEmail);
     const unsubUserFiliais = onSnapshot(permRef, (docSnap) => {
@@ -384,7 +384,7 @@ const Dashboard = ({ user, onNoAccess }) => {
   const fdasWithItems = useMemo(() => {
     let filteredFdas = fdas;
     let filteredItems = rawItems;
-    
+
     // Se não for master, filtrar por filiais
     if (!isMaster && userFiliais.length > 0) {
       filteredFdas = fdas.filter(fda => userFiliais.includes(fda.filialId));
@@ -393,16 +393,16 @@ const Dashboard = ({ user, onNoAccess }) => {
         return fda && userFiliais.includes(fda.filialId);
       });
     }
-    
-    return filteredFdas.map(fda => ({ 
-      ...fda, 
-      items: filteredItems.filter(item => item.fdaId === fda.id) 
+
+    return filteredFdas.map(fda => ({
+      ...fda,
+      items: filteredItems.filter(item => item.fdaId === fda.id)
     })).sort((a, b) => (b.number || '').localeCompare(a.number || ''));
   }, [fdas, rawItems, isMaster, userFiliais]);
-  
+
   const allItems = useMemo(() => {
     let filteredItems = rawItems;
-    
+
     // Se não for master, filtrar por filiais
     if (!isMaster && userFiliais.length > 0) {
       filteredItems = rawItems.filter(item => {
@@ -410,9 +410,9 @@ const Dashboard = ({ user, onNoAccess }) => {
         return fda && userFiliais.includes(fda.filialId);
       });
     }
-    
-    return filteredItems.map(item => ({ 
-      ...item, 
+
+    return filteredItems.map(item => ({
+      ...item,
       fdaNumber: fdas.find(f => f.id === item.fdaId)?.number || 'N/A',
       filialName: filiais.find(f => {
         const fda = fdas.find(fd => fd.id === item.fdaId);
@@ -428,28 +428,28 @@ const Dashboard = ({ user, onNoAccess }) => {
       return;
     }
     const number = `FDA-${new Date().getFullYear()}-${String(fdas.length + 1).padStart(3, '0')}`;
-    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fdas'), { 
-      number, 
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fdas'), {
+      number,
       filialId,
-      createdAt: new Date().toISOString(), 
-      isOpen: true 
+      createdAt: new Date().toISOString(),
+      isOpen: true
     });
     logAction(userEmail, 'CRIAR FDA', `FDA Criada: ${number} - Filial: ${filiais.find(f => f.id === filialId)?.nome}`);
   };
   const toggleFda = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { isOpen: !status });
   const updateFdaNumber = async (id, val) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', id), { number: val.toUpperCase() });
-  
+
   const deleteFda = async (fdaId, fdaNumber) => {
     // Verificar se a FDA tem itens
     const fdaItems = rawItems.filter(item => item.fdaId === fdaId);
-    
+
     if (fdaItems.length > 0) {
       alert('Este atendimento possui lançamentos e não pode ser excluído. Exclua os lançamentos primeiro.');
       return;
     }
-    
+
     if (!window.confirm(`Tem certeza que deseja excluir o atendimento ${fdaNumber}?`)) return;
-    
+
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fdas', fdaId));
       logAction(userEmail, 'EXCLUIR FDA', `FDA excluída: ${fdaNumber}`);
@@ -692,7 +692,7 @@ const Dashboard = ({ user, onNoAccess }) => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       {/* Botão Menu Mobile */}
-      <button 
+      <button
         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         className="lg:hidden fixed top-4 left-4 z-50 p-3 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700 transition-all"
       >
@@ -701,7 +701,7 @@ const Dashboard = ({ user, onNoAccess }) => {
 
       {/* Overlay para fechar menu mobile */}
       {mobileMenuOpen && (
-        <div 
+        <div
           className="lg:hidden fixed inset-0 bg-black/50 z-30"
           onClick={() => setMobileMenuOpen(false)}
         />
@@ -888,11 +888,11 @@ const ExportButton = ({ data, filename, label = "Exportar Dados" }) => {
         <Download size={16} />
         <span className="hidden sm:inline">{label}</span>
       </button>
-      
+
       {showMenu && (
         <>
-          <div 
-            className="fixed inset-0 z-10" 
+          <div
+            className="fixed inset-0 z-10"
             onClick={() => setShowMenu(false)}
           />
           <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-20">
@@ -1050,7 +1050,7 @@ const LogsModule = ({ logs }) => {
             <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Logs do Sistema</h2>
             <p className="text-slate-500 font-medium mt-1">Auditoria de ações dos usuários</p>
           </div>
-          <ExportButton 
+          <ExportButton
             data={filteredLogs.map(log => ({
               'Data/Hora': new Date(log.timestamp).toLocaleString('pt-BR'),
               'Usuário': log.user,
@@ -1167,7 +1167,7 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
   const [selectedFilial, setSelectedFilial] = useState('');
   const [formData, setFormData] = useState({
     status: 'PENDENTE', navio: '', vencimento: '', servicos: '', documento: '', dataEmissao: '',
-    valorBruto: 0, centroCusto: '', nfs: '', valorBase: 0, valorLiquido: 0,
+    valorBruto: 0, centroCusto: '', nfs: '', valorBase: 0, valorLiquido: 0, cartaCredito: 0,
     pis: 0, cofins: 0, csll: 0, guia5952: 0, irrf: 0, guia1708: 0, inss: 0, iss: 0, impostoRet: 0, multa: 0, juros: 0, total: 0,
     clienteFornecedor: '', cnpjCpf: '',
     banco: '', codigoBanco: '', agencia: '', contaCorrente: '', chavePix: '', dataPagamento: '', valorPago: 0, jurosPagos: 0
@@ -1207,19 +1207,42 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
         newData.cnpjCpf = lastEntry.data.cnpjCpf || '';
       }
     }
-    if (field === 'valorBruto') {
-      const v = parseFloat(value) || 0;
-      newData.pis = Number((v * 0.0065).toFixed(2));
-      newData.cofins = Number((v * 0.03).toFixed(2));
-      newData.csll = Number((v * 0.01).toFixed(2));
-      newData.guia5952 = Number((newData.pis + newData.cofins + newData.csll).toFixed(2));
-      newData.irrf = Number((v * 0.015).toFixed(2));
-      newData.guia1708 = newData.irrf;
+    const taxFields = ['valorBruto', 'cartaCredito', 'inss', 'iss', 'multa', 'juros', 'pis', 'cofins', 'csll', 'irrf'];
+
+    if (taxFields.includes(field)) {
+      const v = parseFloat(field === 'valorBruto' ? value : newData.valorBruto) || 0;
+      const cartaCredito = parseFloat(field === 'cartaCredito' ? value : newData.cartaCredito) || 0;
+      const multa = parseFloat(field === 'multa' ? value : newData.multa) || 0;
+      const juros = parseFloat(field === 'juros' ? value : newData.juros) || 0;
+      const inss = parseFloat(field === 'inss' ? value : newData.inss) || 0;
+      const iss = parseFloat(field === 'iss' ? value : newData.iss) || 0;
+
+      // Auto-calc taxes ONLY if changing Valor Bruto
+      if (field === 'valorBruto') {
+        newData.pis = Number((v * 0.0065).toFixed(2));
+        newData.cofins = Number((v * 0.03).toFixed(2));
+        newData.csll = Number((v * 0.01).toFixed(2));
+        newData.irrf = Number((v * 0.015).toFixed(2));
+      }
+
+      // Recalculate Aggregates based on current values (whether auto-calculated or manually changed)
+      const pis = parseFloat(newData.pis) || 0;
+      const cofins = parseFloat(newData.cofins) || 0;
+      const csll = parseFloat(newData.csll) || 0;
+      const irrf = parseFloat(newData.irrf) || 0;
+
+      newData.guia5952 = Number((pis + cofins + csll).toFixed(2));
+      newData.guia1708 = Number(irrf.toFixed(2));
       newData.valorBase = v;
-      const totalRet = newData.guia5952 + newData.irrf + parseFloat(newData.inss || 0) + parseFloat(newData.iss || 0);
+
+      const totalRet = (newData.guia5952 || 0) + (newData.guia1708 || 0) + inss + iss;
       newData.impostoRet = totalRet;
-      newData.valorLiquido = v - totalRet;
-      newData.total = v + (parseFloat(newData.multa) || 0) + (parseFloat(newData.juros) || 0);
+
+      // Total Líquido = Valor Bruto - Impostos - Carta de Crédito
+      newData.valorLiquido = v - totalRet - cartaCredito;
+
+      // Total = Valor Líquido + Multa + Juros
+      newData.total = newData.valorLiquido + multa + juros;
     }
     setFormData(newData);
   };
@@ -1357,8 +1380,8 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10">
         <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Lançamento de Itens</h2>
         <div className="flex flex-wrap items-center gap-4">
-          <ExportButton 
-            data={fdas.flatMap(fda => 
+          <ExportButton
+            data={fdas.flatMap(fda =>
               fda.items.map(item => ({
                 'Atendimento': fda.number,
                 'Filial': filiais.find(f => f.id === fda.filialId)?.nome || 'N/A',
@@ -1371,8 +1394,8 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
                 'Emissão': item.data.dataEmissao || 'N/A',
                 'Vencimento': item.data.vencimento || 'N/A',
                 'Valor Bruto': parseFloat(item.data.valorBruto || 0).toFixed(2),
+                'Carta de Crédito': parseFloat(item.data.cartaCredito || 0).toFixed(2),
                 'Valor Líquido': parseFloat(item.data.valorLiquido || 0).toFixed(2),
-                'Total': parseFloat(item.data.total || 0).toFixed(2),
                 'Status': item.data.status,
                 'Centro Custo': item.data.centroCusto || 'N/A',
                 'Banco': item.data.banco || 'N/A',
@@ -1384,8 +1407,8 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
             filename="lancamentos"
             label="Exportar"
           />
-          <select 
-            value={selectedFilial} 
+          <select
+            value={selectedFilial}
             onChange={(e) => setSelectedFilial(e.target.value)}
             className="px-4 py-3 bg-white border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-sm font-bold"
           >
@@ -1432,7 +1455,10 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
                 </div>
                 <div className="space-y-4">
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Financeiro & Impostos</h5>
-                  <InputField label="Valor Bruto" type="number" value={formData.valorBruto} onChange={v => handleInputChange('valorBruto', v)} highlight />
+                  <div className="grid grid-cols-2 gap-2">
+                    <InputField label="Valor Bruto" type="number" value={formData.valorBruto} onChange={v => handleInputChange('valorBruto', v)} highlight />
+                    <InputField label="Carta de Crédito" type="number" value={formData.cartaCredito} onChange={v => handleInputChange('cartaCredito', v)} highlight />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <InputField label="PIS (0.65%)" type="number" value={formData.pis} onChange={v => handleInputChange('pis', v)} />
                     <InputField label="COFINS (3%)" type="number" value={formData.cofins} onChange={v => handleInputChange('cofins', v)} />
@@ -1441,9 +1467,10 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
                     <InputField label="INSS" type="number" value={formData.inss} onChange={v => handleInputChange('inss', v)} />
                     <InputField label="ISS" type="number" value={formData.iss} onChange={v => handleInputChange('iss', v)} />
                   </div>
-                  <div className="bg-white p-3 rounded-lg border border-slate-200">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Total Líquido</p>
-                    <p className="text-xl font-black text-slate-800">R$ {formData.total?.toFixed(2)}</p>
+                  <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Total Líquido</p>
+                    <p className="text-2xl font-black text-blue-900">R$ {(formData.valorLiquido || 0).toFixed(2)}</p>
+                    <p className="text-[9px] text-blue-600 mt-1 font-medium">Valor Bruto - Impostos - Carta de Crédito</p>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -1563,7 +1590,7 @@ const EntryModule = ({ userEmail, fdas, addFda, toggleFda, updateFdaNumber, dele
                       <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-black text-slate-400 text-[10px]">{idx + 1}</div>
                       <div>
                         <p className="font-black text-slate-700 uppercase text-sm">{it.data.servicos}</p>
-                        <p className="text-[10px] text-slate-400 font-black uppercase">DOC: {it.data.documento} • R$ {it.data.total}</p>
+                        <p className="text-[10px] text-slate-400 font-black uppercase">DOC: {it.data.documento} • R$ {it.data.valorLiquido}</p>
                       </div>
                     </div>
                     <div className="flex gap-2 items-center">
@@ -1651,7 +1678,7 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
       <header className="mb-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Itens Lançados</h2>
-          <ExportButton 
+          <ExportButton
             data={filtered.map(item => ({
               'FDA': item.fdaNumber,
               'Filial': item.filialName,
@@ -1662,7 +1689,7 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
               'Documento': item.data.documento || 'N/A',
               'NF': item.data.nfs || 'N/A',
               'Vencimento': item.data.vencimento,
-              'Valor Total': `R$ ${parseFloat(item.data.total || 0).toFixed(2)}`,
+              'Valor Total': `R$ ${parseFloat(item.data.valorLiquido || 0).toFixed(2)}`,
               'Status': item.data.status,
               'Centro Custo': item.data.centroCusto || 'N/A',
               'Data Provisionamento': item.data.dataProvisionamento || 'N/A',
@@ -1722,7 +1749,7 @@ const LaunchedModule = ({ allItems, onDelete, onEdit, onPreview, userPermissions
                     <div className="text-[10px] text-blue-600 font-black mt-1">{i.fdaNumber}</div>
                     <div className="text-[10px] text-slate-400 font-medium mt-1">{i.data.clienteFornecedor}</div>
                   </td>
-                  <td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(i.data.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td className="p-5 text-right font-black text-slate-900">R$ {parseFloat(i.data.valorLiquido).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                   <td className="p-5 text-center"><StatusBadge status={i.data.status} /></td>
                   <td className="p-5 text-center">
                     <div className="flex items-center justify-center gap-2">
@@ -1820,7 +1847,7 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
     return Object.keys(groups).sort().map(date => ({
       date,
       items: groups[date],
-      total: groups[date].reduce((sum, item) => sum + parseFloat(item.data.total || 0), 0)
+      total: groups[date].reduce((sum, item) => sum + parseFloat(item.data.valorLiquido || 0), 0)
     }));
   }, [allItems, aT, search, steps, sortBy]);
 
@@ -1835,8 +1862,8 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
 
   // Funções de seleção múltipla
   const toggleSelection = (itemId) => {
-    setSelectedItems(prev => 
-      prev.includes(itemId) 
+    setSelectedItems(prev =>
+      prev.includes(itemId)
         ? prev.filter(id => id !== itemId)
         : [...prev, itemId]
     );
@@ -1876,7 +1903,7 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
     return groupedItems
       .flatMap(group => group.items)
       .filter(item => selectedItems.includes(item.id))
-      .reduce((sum, item) => sum + parseFloat(item.data.total || 0), 0);
+      .reduce((sum, item) => sum + parseFloat(item.data.valorLiquido || 0), 0);
   }, [selectedItems, groupedItems]);
 
   // Limpar seleção ao trocar de aba
@@ -1909,7 +1936,7 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
       <header className="mb-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Contas a Pagar</h2>
-          <ExportButton 
+          <ExportButton
             data={groupedItems.flatMap(group => group.items).map(item => ({
               'Vencimento': item.data.vencimento,
               'Serviço': item.data.servicos,
@@ -1918,7 +1945,7 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
               'Navio': item.data.navio || 'N/A',
               'Documento': item.data.documento || 'N/A',
               'NF': item.data.nfs || 'N/A',
-              'Valor Total': `R$ ${parseFloat(item.data.total || 0).toFixed(2)}`,
+              'Valor Total': `R$ ${parseFloat(item.data.valorLiquido || 0).toFixed(2)}`,
               'Status': item.data.status,
               'Centro Custo': item.data.centroCusto || 'N/A',
               'Data Provisionamento': item.data.dataProvisionamento || 'N/A',
@@ -2069,12 +2096,12 @@ const FinanceModule = ({ allItems, isMaster, updateItem, onDelete, onPreview, us
                         {it.data.navio && <div className="text-[10px] text-blue-600 font-bold mt-1">🚢 {it.data.navio}</div>}
                       </td>
                       <td className="p-3 sm:p-5 text-right font-black text-slate-900 w-auto sm:w-1/6">
-                        <div className="whitespace-nowrap">R$ {parseFloat(it.data.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        <div className="whitespace-nowrap">R$ {parseFloat(it.data.valorLiquido).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                       </td>
                       <td className="p-3 sm:p-5 text-center w-auto sm:w-1/4 hidden md:table-cell">
                         <div className="flex gap-2 justify-center">
-                          <button onClick={() => openFile(it.data.anexosNF, "Nota Fiscal")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors"><ExternalLink size={10} /> Nota</button>
-                          <button onClick={() => openFile(it.data.anexosBoleto, "Boleto")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-slate-50 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors"><ExternalLink size={10} /> Boleto</button>
+                          <button onClick={() => openFile(it.anexosNF, "Nota Fiscal")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors"><ExternalLink size={10} /> Nota</button>
+                          <button onClick={() => openFile(it.anexosBoleto, "Boleto")} className="flex items-center gap-1 text-[9px] font-bold uppercase bg-slate-50 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors"><ExternalLink size={10} /> Boleto</button>
                         </div>
                       </td>
                       <td className="p-3 sm:p-5 text-center w-auto sm:w-1/4">
@@ -2161,7 +2188,7 @@ const FiliaisModule = ({ filiais, userEmail }) => {
     <div className="max-w-4xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Gerenciar Filiais</h2>
-        <ExportButton 
+        <ExportButton
           data={filiais.map(f => ({
             'Nome': f.nome,
             'Criado em': new Date(f.criadoEm).toLocaleDateString('pt-BR'),
@@ -2272,7 +2299,7 @@ const FiliaisModule = ({ filiais, userEmail }) => {
 // --- MÓDULO DE GERENCIAMENTO DE USUÁRIOS ATUALIZADO ---
 const UserManagementModule = ({ usersList, filiais }) => {
   const [newUserEmail, setNewUserEmail] = useState('');
-  
+
   const permissions = [
     { id: 'entry', label: 'Módulo: Lançamento', category: 'module' },
     { id: 'launched', label: 'Módulo: Itens Lançados', category: 'module' },
@@ -2291,7 +2318,7 @@ const UserManagementModule = ({ usersList, filiais }) => {
       alert('Digite um e-mail válido');
       return;
     }
-    
+
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'permissions', newUserEmail), {
         modules: ['entry'],
@@ -2311,7 +2338,7 @@ const UserManagementModule = ({ usersList, filiais }) => {
     if (!user) return;
 
     const currentModules = user.modules || [];
-    const newModules = isChecked 
+    const newModules = isChecked
       ? [...currentModules, moduleId]
       : currentModules.filter(m => m !== moduleId);
 
@@ -2331,7 +2358,7 @@ const UserManagementModule = ({ usersList, filiais }) => {
     if (!user) return;
 
     const currentFiliais = user.filiais || [];
-    const newFiliais = isChecked 
+    const newFiliais = isChecked
       ? [...currentFiliais, filialId]
       : currentFiliais.filter(f => f !== filialId);
 
@@ -2367,7 +2394,7 @@ const UserManagementModule = ({ usersList, filiais }) => {
     <div className="max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight uppercase">Gerenciar Usuários</h2>
-        <ExportButton 
+        <ExportButton
           data={usersList.map(u => ({
             'E-mail': u.email,
             'Módulos': (u.modules || []).join(', '),
@@ -2378,20 +2405,20 @@ const UserManagementModule = ({ usersList, filiais }) => {
           label="Exportar"
         />
       </div>
-      
+
       {/* Adicionar Novo Usuário */}
       <div className="bg-white p-4 sm:p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
         <div className="flex flex-col sm:flex-row gap-4">
-          <input 
-            type="email" 
-            placeholder="nome@empresa.com" 
-            className="flex-1 border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none text-sm font-medium" 
-            value={newUserEmail} 
+          <input
+            type="email"
+            placeholder="nome@empresa.com"
+            className="flex-1 border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none text-sm font-medium"
+            value={newUserEmail}
             onChange={e => setNewUserEmail(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && addUser()}
           />
-          <button 
-            onClick={addUser} 
+          <button
+            onClick={addUser}
             className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all whitespace-nowrap"
           >
             Autorizar
@@ -2405,7 +2432,7 @@ const UserManagementModule = ({ usersList, filiais }) => {
           <div key={user.email} className="bg-white rounded-2xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <UserCog size={18} className="text-blue-600" /> 
+                <UserCog size={18} className="text-blue-600" />
                 {user.email}
                 {user.email === MASTER_USER && (
                   <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-black uppercase">Master</span>
@@ -2428,10 +2455,10 @@ const UserManagementModule = ({ usersList, filiais }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {permissions.filter(p => p.category === 'module').map(perm => (
                   <label key={perm.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    <input 
-                      type="checkbox" 
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" 
-                      checked={user.modules?.includes(perm.id)} 
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      checked={user.modules?.includes(perm.id)}
                       onChange={(e) => handleUpdate(user.email, perm.id, e.target.checked)}
                       disabled={user.email === MASTER_USER}
                     />
@@ -2447,10 +2474,10 @@ const UserManagementModule = ({ usersList, filiais }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {permissions.filter(p => p.category === 'tab').map(perm => (
                   <label key={perm.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-blue-50 p-3 rounded-lg border border-blue-200 bg-blue-50/30">
-                    <input 
-                      type="checkbox" 
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" 
-                      checked={user.modules?.includes(perm.id)} 
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      checked={user.modules?.includes(perm.id)}
                       onChange={(e) => handleUpdate(user.email, perm.id, e.target.checked)}
                       disabled={user.email === MASTER_USER}
                     />
@@ -2469,10 +2496,10 @@ const UserManagementModule = ({ usersList, filiais }) => {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {filiais.map(filial => (
                     <label key={filial.id} className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer hover:bg-slate-50 p-2 rounded">
-                      <input 
-                        type="checkbox" 
-                        className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" 
-                        checked={user.filiais?.includes(filial.id)} 
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
+                        checked={user.filiais?.includes(filial.id)}
                         onChange={(e) => handleFilialUpdate(user.email, filial.id, e.target.checked)}
                         disabled={user.email === MASTER_USER}
                       />
